@@ -115,6 +115,7 @@
             $maxTime = GetSetting('maxtime');
             if ($maxTime && $test['timeout'] > $maxTime)
               $test['timeout'] = (int)$maxTime;
+            $test['maxTestTime'] = isset($req_maxTestTime) ? (int)$req_maxTestTime : 60;
             $test['connections'] = (int)$req_connections;
             $test['private'] = $req_private;
             $test['web10'] = $req_web10;
@@ -1926,6 +1927,7 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
         $testInfo = "[test]\r\n";
         AddIniLine($testInfo, "fvonly", $test['fvonly']);
         AddIniLine($testInfo, "timeout", $test['timeout']);
+        AddIniLine($testInfo, "maxTestTime", $test["maxTestTime"]);
         $resultRuns = $test['runs'] - $test['discard'];
         AddIniLine($testInfo, "runs", $resultRuns);
         AddIniLine($testInfo, "location", "\"{$test['locationText']}\"");
@@ -1981,6 +1983,9 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
                 AddIniLine($testFile, 'fvonly', '1');
             if( $test['timeout'] )
                 AddIniLine($testFile, 'timeout', $test['timeout']);
+            if( isset($test['maxTestTime']) ) {
+                AddIniLine($testFile, "maxTestTime", $test["maxTestTime"]);
+            }
             if( $test['web10'] )
                 AddIniLine($testFile, 'web10', '1');
             if( $test['ignoreSSL'] )
@@ -2134,7 +2139,6 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
               foreach($test['customMetrics'] as $name => $code)
                 AddIniLine($testFile, 'customMetric', "$name:$code");
             }
-
             if( !SubmitUrl($testId, $testFile, $test, $url) )
                 $testId = null;
         }
