@@ -2555,20 +2555,7 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
               $crux_key = explode(',', $crux_keys);
               $job['crux_api_key'] = trim($crux_key[array_rand($crux_key)]);
             }
-            // Generate the job file name
-            $ext = 'url';
-            if( $test['priority'] )
-                $ext = "p{$test['priority']}";
-            $test['job'] = "$testId.$ext";
-
-            // Write out the json before submitting the test to the queue
-            $oldUrl = @$test['url'];
-            $test['url'] = $url;
-            $test['id'] = $testId; 
-            SaveTestInfo($testId, $test);
-            $test['url'] = $oldUrl;
-
-            if( !SubmitUrl($testId, $job, $test, $url) )
+            if( !SubmitUrl($testId, $testFile, $test, $url) )
                 $testId = null;
         } elseif (isset($testId)) {
             $oldUrl = @$test['url'];
