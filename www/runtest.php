@@ -115,6 +115,7 @@
             $maxTime = GetSetting('maxtime');
             if ($maxTime && $test['timeout'] > $maxTime)
               $test['timeout'] = (int)$maxTime;
+            $test['maxTestTime'] = isset($req_maxTestTime) ? (int)$req_maxTestTime : 60;
             $test['connections'] = (int)$req_connections;
             if (isset($req_private)) {
               $test['private'] = $req_private;
@@ -1951,6 +1952,7 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
         $testInfo = "[test]\r\n";
         AddIniLine($testInfo, "fvonly", $test['fvonly']);
         AddIniLine($testInfo, "timeout", $test['timeout']);
+        AddIniLine($testInfo, "maxTestTime", $test["maxTestTime"]);
         $resultRuns = $test['runs'] - $test['discard'];
         AddIniLine($testInfo, "runs", $resultRuns);
         AddIniLine($testInfo, "location", "\"{$test['locationText']}\"");
@@ -2006,6 +2008,9 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
                 AddIniLine($testFile, 'fvonly', '1');
             if( $test['timeout'] )
                 AddIniLine($testFile, 'timeout', $test['timeout']);
+            if( isset($test['maxTestTime']) ) {
+                AddIniLine($testFile, "maxTestTime", $test["maxTestTime"]);
+            }
             if( $test['web10'] )
                 AddIniLine($testFile, 'web10', '1');
             if( $test['ignoreSSL'] )
@@ -2530,7 +2535,7 @@ function ValidateCommandLine($cmd, &$error) {
     $flags = explode(' ', $cmd);
     if ($flags && is_array($flags) && count($flags)) {                
       foreach($flags as $flag) {
-        if (strlen($flag) && !preg_match('/^--(([a-zA-Z0-9\-\.\+=,_ "]+)|((data-reduction-proxy-http-proxies|proxy-server|proxy-pac-url|force-fieldtrials|force-fieldtrial-params|trusted-spdy-proxy|origin-to-force-quic-on|oauth2-refresh-token)=[a-zA-Z0-9\-\.\+=,_:\/"]+))$/', $flag)) {
+        if (strlen($flag) && !preg_match('/^--(([a-zA-Z0-9\-\.\+=,_ "]+)|((data-reduction-proxy-http-proxies|proxy-server|proxy-pac-url|force-fieldtrials|force-fieldtrial-params|trusted-spdy-proxy|origin-to-force-quic-on|oauth2-refresh-token|unsafely-treat-insecure-origin-as-secure)=[a-zA-Z0-9\-\.\+=,_:\/"]+))$/', $flag)) {
           $error = 'Invalid command-line option: "' . htmlspecialchars($flag) . '"';
         }
       }
