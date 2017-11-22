@@ -171,10 +171,8 @@
             $maxTime = GetSetting('maxtime');
             if ($maxTime && $test['timeout'] > $maxTime)
               $test['timeout'] = (int)$maxTime;
-            $run_time_limit = GetSetting('run_time_limit');
-            if ($run_time_limit)
-              $test['run_time_limit'] = (int)$run_time_limit;
-            $test['connections'] = isset($req_connections) ? (int)$req_connections : 0;
+            $test['maxTestTime'] = isset($req_maxTestTime) ? (int)$req_maxTestTime : 60;
+            $test['connections'] = (int)$req_connections;
             if (isset($req_private)) {
               $test['private'] = $req_private;
             } elseif (GetSetting('defaultPrivate')) {
@@ -2290,12 +2288,9 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
         // write out the ini file
         $testInfo = "[test]\r\n";
         AddIniLine($testInfo, "fvonly", $test['fvonly']);
-        $timeout = $test['timeout'];
-        if (!$timeout) {
-          $timeout = GetSetting('step_timeout', $timeout);
-        }
-        AddIniLine($testInfo, "timeout", $timeout);
-        $resultRuns = isset($test['discard']) ? $test['runs'] - $test['discard'] : $test['runs'];
+        AddIniLine($testInfo, "timeout", $test['timeout']);
+        AddIniLine($testInfo, "maxTestTime", $test["maxTestTime"]);
+        $resultRuns = $test['runs'] - $test['discard'];
         AddIniLine($testInfo, "runs", $resultRuns);
         AddIniLine($testInfo, "location", "\"{$test['locationText']}\"");
         AddIniLine($testInfo, "loc", $test['location']);
@@ -2342,38 +2337,30 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
             // build up the json test job
             $job = array();
             // build up the actual test commands
-            if (isset($test['priority']))
-              $job["priority"] = $test['priority'];
-            if( isset($test['fvonly']) && $test['fvonly'] ) {
-                $job['fvonly'] = 1;
-            } else {
-                $job['fvonly'] = 0;
+            $testFile = '';
+            if( strlen($test['domElement']) )
+                AddIniLine($testFile, 'DOMElement', $test['domElement']);
+            if( $test['fvonly'] )
+                AddIniLine($testFile, 'fvonly', '1');
+            if( $test['timeout'] )
+                AddIniLine($testFile, 'timeout', $test['timeout']);
+            if( isset($test['maxTestTime']) ) {
+                AddIniLine($testFile, "maxTestTime", $test["maxTestTime"]);
             }
-            if( $timeout )
-                $job['timeout'] = intval($timeout);
-            if (isset($test['run_time_limit']))
-              $job["run_time_limit"] = $test['run_time_limit'];
-            if( isset($test['web10']) && $test['web10'] )
-                $job['web10'] = 1;
-            if( isset($test['ignoreSSL']) && $test['ignoreSSL'] )
-                $job['ignoreSSL'] = 1;
-            if( isset($test['tcpdump']) && $test['tcpdump'] )
-                $job['tcpdump'] = 1;
-            if( isset($test['standards']) && $test['standards'] )
-                $job['standards'] = 1;
-            if( isset($test['timeline']) && $test['timeline'] ) {
-                $job['timeline'] = 1;
-                if (isset($test['discard_timeline']) && $test['discard_timeline'])
-                  $job['discard_timeline'] = 1;
-                if (isset($test['profiler']) && $test['profiler'])
-                  $job['profiler'] = 1;
-                if (isset($test['timeline_fps']))
-                  $job['timeline_fps'] = intval($test['timeline_fps']);
-                if (isset($test['timelineStackDepth']))
-                  $job['timelineStackDepth'] = intval($test['timelineStackDepth']);
+            if( $test['web10'] )
+                AddIniLine($testFile, 'web10', '1');
+            if( $test['ignoreSSL'] )
+                AddIniLine($testFile, 'ignoreSSL', '1');
+            if( $test['tcpdump'] )
+                AddIniLine($testFile, 'tcpdump', '1');
+            if( $test['standards'] )
+                AddIniLine($testFile, 'standards', '1');
+            if( $test['timeline'] ) {
+                AddIniLine($testFile, 'timeline', '1');
+                AddIniLine($testFile, 'timelineStackDepth', $test['timelineStackDepth']);
             }
-            if( isset($test['trace']) && $test['trace'] )
-                $job['trace'] = 1;
+            if( $test['trace'] )
+                AddIniLine($testFile, 'trace', '1');
             if (isset($test['traceCategories']))
                 $job['traceCategories'] = $test['traceCategories'];
             if( isset($test['swrender']) && $test['swrender'] )
@@ -2956,7 +2943,7 @@ function ValidateCommandLine($cmd, &$error) {
     $flags = explode(' ', $cmd);
     if ($flags && is_array($flags) && count($flags)) {
       foreach($flags as $flag) {
-        if (strlen($flag) && !preg_match('/^--(([a-zA-Z0-9\-\.\+=,_< "]+)|((data-reduction-proxy-http-proxies|data-reduction-proxy-config-url|proxy-server|proxy-pac-url|force-fieldtrials|force-fieldtrial-params|trusted-spdy-proxy|origin-to-force-quic-on|oauth2-refresh-token|unsafely-treat-insecure-origin-as-secure|user-data-dir)=[a-zA-Z0-9\-\.\+=,_:\/"%]+))$/', $flag)) {
+        if (strlen($flag) && !preg_match('/^--(([a-zA-Z0-9\-\.\+=,_ "]+)|((data-reduction-proxy-http-proxies|proxy-server|proxy-pac-url|force-fieldtrials|force-fieldtrial-params|trusted-spdy-proxy|origin-to-force-quic-on|oauth2-refresh-token|unsafely-treat-insecure-origin-as-secure)=[a-zA-Z0-9\-\.\+=,_:\/"]+))$/', $flag)) {
           $error = 'Invalid command-line option: "' . htmlspecialchars($flag) . '"';
         }
       }
