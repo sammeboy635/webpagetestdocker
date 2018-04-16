@@ -43,7 +43,7 @@ function ArchiveTest($id, $store_result = true, $delete = false) {
             if (GetSetting('archive_dir') == '/dev/null') {
               $ret = true;
             } else {
-              if( isset($testInfo['archived']) && $testInfo['archived'] ) {
+              if( false && isset($testInfo['archived']) && $testInfo['archived'] ) {
                   if (VerifyArchive($id)) {
                       $ret = true;
                   } else {
@@ -320,6 +320,7 @@ function VerifyArchive($id) {
             $s3 = new S3(trim($settings['archive_s3_key']), trim($settings['archive_s3_secret']), false, trim($settings['archive_s3_server']), $urlstyle);
             $bucket = $settings['archive_s3_bucket'];
             $file = "$id.zip";
+            
             if (($info = $s3->getObjectInfo($bucket, $file)) !== false) {
                 $valid = true;
             }
