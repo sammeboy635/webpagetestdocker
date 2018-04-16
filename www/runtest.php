@@ -523,13 +523,14 @@
                 unset($test['spam']);
             $test['priority'] =  0;
         }
-        
+       
         if ($test['mobile'] && is_file('./settings/mobile_devices.ini')) {
           $devices = parse_ini_file('./settings/mobile_devices.ini', true);
           if ($devices) {
             if (isset($test['mobileDevice'])) {
               setcookie('mdev', $test['mobileDevice'], time()+60*60*24*365, '/');
             }
+            
             if (!isset($test['mobileDevice']) || !isset($devices[$test['mobileDevice']])) {
               // Grab the first device from the list
               $test['mobileDevice'] = key($devices);
@@ -2523,7 +2524,7 @@ function ValidateCommandLine($cmd, &$error) {
     $flags = explode(' ', $cmd);
     if ($flags && is_array($flags) && count($flags)) {                
       foreach($flags as $flag) {
-        if (strlen($flag) && !preg_match('/^--(([a-zA-Z0-9\-\.\+=,_ "]+)|((data-reduction-proxy-http-proxies|proxy-server|proxy-pac-url|force-fieldtrials|force-fieldtrial-params|trusted-spdy-proxy|origin-to-force-quic-on|oauth2-refresh-token)=[a-zA-Z0-9\-\.\+=,_:\/"]+))$/', $flag)) {
+        if (strlen($flag) && !preg_match('/^--(([a-zA-Z0-9\-\.\+=,_ "]+)|((data-reduction-proxy-http-proxies|proxy-server|proxy-pac-url|force-fieldtrials|force-fieldtrial-params|trusted-spdy-proxy|origin-to-force-quic-on|oauth2-refresh-token|unsafely-treat-insecure-origin-as-secure)=[a-zA-Z0-9\-\.\+=,_:\/"]+))$/', $flag)) {
           $error = 'Invalid command-line option: "' . htmlspecialchars($flag) . '"';
         }
       }
