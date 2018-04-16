@@ -52,7 +52,7 @@ function EC2_StartInstanceIfNeeded($ami) {
 */
 function EC2_StartInstance($ami) {
   $started = false;
-  
+  $host = '';
   // figure out the user data string to use for the instance
   $key = GetSetting('location_key');
   $locations = LoadLocationsIni();
@@ -87,14 +87,25 @@ function EC2_StartInstance($ami) {
   }
   if (strlen($loc) && isset($region)) {
     $host = GetSetting('host');
+    $useprivateip = GetSetting('ec2_use_server_private_ip');
     if (!$host && isset($_SERVER['HTTP_HOST']) && strlen($_SERVER['HTTP_HOST']))
       $host = $_SERVER['HTTP_HOST'];
     if ((!$host || $host == '127.0.0.1' || $host == 'localhost') && GetSetting('ec2')) {
-      $host = file_get_contents('http://169.254.169.254/latest/meta-data/public-ipv4');
-      if (!isset($host) || !strlen($host))
-        $host = file_get_contents('http://169.254.169.254/latest/meta-data/public-hostname');
-      if (!isset($host) || !strlen($host))
-        $host = file_get_contents('http://169.254.169.254/latest/meta-data/hostname');
+      if ($useprivateip == 1) {
+        EC2Log("Getting private IP");
+        $host = file_get_contents('http://169.254.169.254/latest/meta-data/local-ipv4');
+        if (!isset($host) || !strlen($host))
+          $host = file_get_contents('http://169.254.169.254/latest/meta-data/local-hostname');
+        if (!isset($host) || !strlen($host))
+          $host = file_get_contents('http://169.254.169.254/latest/meta-data/hostname');
+      } else {
+        EC2Log("Getting public IP");
+        $host = file_get_contents('http://169.254.169.254/latest/meta-data/public-ipv4');
+        if (!isset($host) || !strlen($host))
+          $host = file_get_contents('http://169.254.169.254/latest/meta-data/public-hostname');
+        if (!isset($host) || !strlen($host))
+          $host = file_get_contents('http://169.254.169.254/latest/meta-data/hostname');
+      }
     }
     $user_data = "wpt_server=$host";
     $wpt_username = GetSetting('ba_username');
@@ -124,8 +135,16 @@ function EC2_StartInstance($ami) {
 
 /**
 * Terminate any EC2 Instances that are configured for auto-scaling
-* if they have not had work in the last 15 minutes and are close
-* to an hourly increment of running (since EC2 bills hourly)
+* if they have not had work.
+*
+* Linux agents are billed per second ( with a minimum of 60 seconds ), and
+* are terminated after being idle for EC2.IdleTerminateMinutes, from the
+* settings.
+*
+* Windows agents are billed hourly and terminate if they have not had any
+* work in the last 15 minutes and are close to an hourly increment of running.
+*
+* https://aws.amazon.com/about-aws/whats-new/2017/10/announcing-amazon-ec2-per-second-billing/
 * 
 */
 function EC2_TerminateIdleInstances() {
@@ -158,12 +177,20 @@ function EC2_TerminateIdleInstances() {
       }
     }
 
+	$idleTerminateMinutes = max(intval(GetSetting("EC2.IdleTerminateMinutes", 60)), 1);
+
     foreach($instances as $instance) {
       $minutes = $instance['runningTime'] / 60.0;
-      if ($minutes > 15 && $minutes % 60 >= 50) {
+      if ($idleTerminateMinutes) {
+        $timeCheck = ( $minutes > $idleTerminateMinutes );
+      } else {
+        $timeCheck = ( $minutes > 15 && $minutes % 60 >= 50 );
+      }
+      if ($timeCheck) {
         $terminate = true;
-        $lastWork = null;   // last job assigned from this location
-        $lastCheck = null;  // time since this instance connected (if ever)
+        $lastWork = max($idleTerminateMinutes, 99999);   // last job assigned from this location
+        $lastCheck = max($idleTerminateMinutes, 99999);  // time since this instance connected (if ever)
+        $has_test = false;
         
         foreach ($instance['locations'] as $location) {
           if ($agentCounts[$location]['count'] <= $agentCounts[$location]['min']) {
@@ -171,24 +198,37 @@ function EC2_TerminateIdleInstances() {
           } elseif (isset($locations[$location]['testers'])) {
             foreach ($locations[$location]['testers'] as $tester) {
               if (isset($tester['ec2']) && $tester['ec2'] == $instance['id']) {
-                if (isset($tester['last']) && (!isset($lastWork) || $tester['last'] < $lastWork))
+                if (isset($tester['last']) && $tester['last'] < $lastWork)
                   $lastWork = $tester['last'];
-                $lastCheck = $tester['elapsed'];
+                if (isset($tester['elapsed']) && $tester['elapsed'] < $lastCheck)
+                  $lastCheck = $tester['elapsed'];
+                if (isset($tester['test']) && strlen($tester['test'])) {
+                  // don't terminate an instance that is busy with a test
+                  $terminate = false;
+                }
               }
             }
           }
         }
         
-        // Keep the instance if the location had work in the last 15 minutes
-        // and if this instance has checked in recently
-        if (isset($lastWork) && isset($lastCheck) && $lastWork < 15 && $lastCheck < 15)
+        // Keep the instance if the location had work in the last
+        // EC2.IdleTerminateMinutes and if this instance has checked in recently
+        if (!isset($lastCheck)) {
+          // Don't terminate an instance that has been running for less than
+          // an hour and hasn't yet connected
+          if ($minutes < 60)
+            $terminate = false;
+        } elseif (isset($lastWork) && $lastWork < $idleTerminateMinutes) {
+          // Don't terminate it if the last job was recent
           $terminate = false;
+        }
         
         if ($terminate) {
           if (isset($instance['ami']) && $instance['running'])
             $instanceCounts[$instance['ami']]['count']--;
           foreach ($instance['locations'] as $location)
             $agentCounts[$location]['count']--;
+          EC2Log("Terminatingstance {$instance['id']} in {$instance['region']} - lastWork = $lastWork, lastCheck = $lastCheck");
           EC2_TerminateInstance($instance['region'], $instance['id']);
         }
       }
@@ -258,8 +298,10 @@ function EC2_SendInstancesOffline() {
         foreach ($testers['testers'] as $tester) {
           if (!isset($tester['offline']) || !$tester['offline'])
             $online++;
-        }
-        if ($online > $online_target) {
+        }  
+        // Leave one instance running, so that it can process any tests that
+        // come in before it hits the termination time limit.
+        if (($online > 1 ) && ($online > $online_target)) {
           foreach ($testers['testers'] as &$tester) {
             if ($online > $online_target && (!isset($tester['offline']) || !$tester['offline'])) {
               $tester['offline'] = true;
