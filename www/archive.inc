@@ -85,40 +85,35 @@ function ArchiveTest($id, $delete = false) {
             if (GetSetting('archive_dir') == '/dev/null') {
               $ret = true;
             } else {
-                if( is_file("$testPath/.archived") ) {
-                    if (VerifyArchive($id)) {
-                        $ret = true;
-                    } else {
-                        $zipFile = GetArchiveFile($id, true);
-                        unlink($zipFile);
-                        @unlink("$testPath/.archived");
-                        SaveTestInfo($id, $testInfo);
-                    }
-                }
-
-                if (!$ret) {
-                    $lock = LockTest($id);
-                    if (isset($lock)) {
-                        $testInfo = GetTestInfo($id);
-                        $zipFile = "./tmp/$id.zip";
-                        // zip up the contents
-                        if (is_dir($testPath) === true) {
-                            $count = 0;
-                            $zip = new ZipArchive();
-                            $max_zip_size = intval(GetSetting('archive_max_size', 0));
-                            $zip_size = 0;
-                            if ($zip->open($zipFile, ZIPARCHIVE::CREATE) === true) {
-                                // add the files
-                                $files = scandir($testPath);
-                                foreach ($files as $file) {
-                                    $filePath = "$testPath/$file";
-                                    if (is_file($filePath)) {
-                                        if (!ArchiveSkipFile($file) && !ArchiveFilterLargeFile($file)) {
-                                            $count++;
-                                            $zip_size += filesize($filePath);
-                                            $zip->addFile($filePath, $file);
-                                        }
-                                    }
+              if( false && isset($testInfo['archived']) && $testInfo['archived'] ) {
+                  if (VerifyArchive($id)) {
+                      $ret = true;
+                  } else {
+                      $zipFile = GetArchiveFile($id, true);
+                      unlink($zipFile);
+                      $testInfo['archived'] = false;
+                      SaveTestInfo($id, $testInfo);
+                  }
+              }
+              
+              if (!$ret) {
+                $lock = LockTest($id);
+                if (isset($lock)) {
+                  $testInfo = GetTestInfo($id);
+                  $zipFile = "./tmp/$id.zip";
+                  // zip up the contents
+                  if (is_dir($testPath) === true) {
+                      $count = 0;
+                      $zip = new ZipArchive();
+                      if ($zip->open($zipFile, ZIPARCHIVE::CREATE) === true) {
+                          // add the files
+                          $files = scandir($testPath);
+                          foreach ($files as $file) {
+                              $filePath = "$testPath/$file";
+                              if (is_file($filePath)) {
+                                if (!ArchiveSkipFile($file)) {
+                                  $count++;
+                                  $zip->addFile($filePath, $file);
                                 }
                                 // Add the video directories, trace, tcpdump and bodies files
                                 foreach ($files as $file) {
@@ -458,6 +453,7 @@ function VerifyArchive($id) {
             $s3 = new S3(trim(GetSetting('archive_s3_key')), trim(GetSetting('archive_s3_secret')), false, trim(GetSetting('archive_s3_server')), $urlstyle);
             $bucket = GetSetting('archive_s3_bucket');
             $file = "$id.zip";
+            
             if (($info = $s3->getObjectInfo($bucket, $file)) !== false) {
                 $valid = true;
             }
