@@ -667,14 +667,14 @@
                 unset($test['spam']);
             $test['priority'] = intval(GetSetting('user_priority', 0));
         }
-
-        if ($test['mobile']) {
-          $devices = LoadMobileDevices();
-          $is_mobile = true;
+       
+        if ($test['mobile'] && is_file('./settings/mobile_devices.ini')) {
+          $devices = parse_ini_file('./settings/mobile_devices.ini', true);
           if ($devices) {
             if (isset($test['mobileDevice'])) {
               setcookie('mdev', $test['mobileDevice'], time()+60*60*24*365, '/');
             }
+            
             if (!isset($test['mobileDevice']) || !isset($devices[$test['mobileDevice']])) {
               // Grab the first device from the list
               $test['mobileDevice'] = key($devices);
