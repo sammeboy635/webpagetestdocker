@@ -14,12 +14,9 @@ require_once __DIR__ . '/include/RequestDetailsHtmlSnippet.php';
 require_once __DIR__ . '/include/RequestHeadersHtmlSnippet.php';
 require_once __DIR__ . '/include/AccordionHtmlHelper.php';
 
-$options = null;
-if (array_key_exists('end', $_REQUEST))
-    $options = array('end' => $_REQUEST['end']);
 $testInfo = TestInfo::fromFiles($testPath);
-$testRunResults = TestRunResults::fromFiles($testInfo, $run, $cached, null, $options);
-$data = loadPageRunData($testPath, $run, $cached, $options, $test['testinfo']);
+$testRunResults = TestRunResults::fromFiles($testInfo, $run, $cached, null);
+$data = loadPageRunData($testPath, $run, $cached, $test['testinfo']);
 $isMultistep = $testRunResults->countSteps() > 1;
 
 $page_keywords = array('Performance Test','Details','Webpagetest','Website Speed Test','Page Speed');
@@ -170,13 +167,14 @@ $page_description = "Website performance test details$testLabel";
                                 echo "</tr>\n";
                                 foreach ($testRunResults->getStepResults() as $stepResult) {
                                     echo "<tr>\n";
-                                    $params = ParseCsiInfoForStep($stepResult->createTestPaths(), true);
+                                    if (GetSetting('enable_csi'))
+                                      $params = ParseCsiInfoForStep($stepResult->createTestPaths(), true);
                                     if ($isMultistep) {
                                         echo '<td class="even" valign="middle">' . $stepResult->readableIdentifier() . '</td>';
                                     }
                                     foreach ( $test['testinfo']['extract_csi'] as $csi_param )
                                     {
-                                        if( array_key_exists($csi_param, $params) )
+                                        if( isset($params) && array_key_exists($csi_param, $params) )
                                         {
                                             echo '<td class="even" valign="middle">' . $params[$csi_param] . '</td>';
                                         }

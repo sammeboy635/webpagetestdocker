@@ -1,6 +1,6 @@
 browser=Chrome
-url=http://cdn.webpagetest.org/installers/browsers/chrome_62.exe
-md5=863D862E860D2D02E194A7F3891218BC
-version=62
-command=chrome_62.exe /silent /install
+url=http://cdn.webpagetest.org/installers/browsers/chrome_64.exe
+md5=ED887AFCAB9BEE6DB064254538C699F1
+version=64
+command=chrome_64.exe /silent /install
 update=1
