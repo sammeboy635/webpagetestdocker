@@ -171,8 +171,8 @@
             $maxTime = GetSetting('maxtime');
             if ($maxTime && $test['timeout'] > $maxTime)
               $test['timeout'] = (int)$maxTime;
-            $test['maxTestTime'] = isset($req_maxTestTime) ? (int)$req_maxTestTime : 60;
-            $test['connections'] = (int)$req_connections;
+            //$test['maxTestTime'] = isset($req_maxTestTime) ? (int)$req_maxTestTime : 120;
+            $test['connections'] = isset($req_connections) ? (int)$req_connections : 0;
             if (isset($req_private)) {
               $test['private'] = $req_private;
             } elseif (GetSetting('defaultPrivate')) {
@@ -2289,8 +2289,8 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
         $testInfo = "[test]\r\n";
         AddIniLine($testInfo, "fvonly", $test['fvonly']);
         AddIniLine($testInfo, "timeout", $test['timeout']);
-        AddIniLine($testInfo, "maxTestTime", $test["maxTestTime"]);
-        $resultRuns = $test['runs'] - $test['discard'];
+        //AddIniLine($testInfo, "maxTestTime", $test["maxTestTime"]);
+        $resultRuns = isset($test['discard']) ? $test['runs'] - $test['discard'] : $test['runs'];
         AddIniLine($testInfo, "runs", $resultRuns);
         AddIniLine($testInfo, "location", "\"{$test['locationText']}\"");
         AddIniLine($testInfo, "loc", $test['location']);
@@ -2344,10 +2344,10 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
                 AddIniLine($testFile, 'fvonly', '1');
             if( $test['timeout'] )
                 AddIniLine($testFile, 'timeout', $test['timeout']);
-            if( isset($test['maxTestTime']) ) {
-                AddIniLine($testFile, "maxTestTime", $test["maxTestTime"]);
-            }
-            if( $test['web10'] )
+            //if( isset($test['maxTestTime']) ) {
+            //    AddIniLine($testFile, "maxTestTime", $test["maxTestTime"]);
+            //}
+            if( isset($test['web10']) && $test['web10'] )
                 AddIniLine($testFile, 'web10', '1');
             if( $test['ignoreSSL'] )
                 AddIniLine($testFile, 'ignoreSSL', '1');
@@ -2927,12 +2927,9 @@ function ProcessTestScript($url, &$test) {
 */
 function ValidateCommandLine($cmd, &$error) {
   if (isset($cmd) && strlen($cmd)) {
-    $flags = explode(' ', $cmd);
-    if ($flags && is_array($flags) && count($flags)) {
-      foreach($flags as $flag) {
-        if (strlen($flag) && !preg_match('/^--(([a-zA-Z0-9\-\.\+=,_ "]+)|((data-reduction-proxy-http-proxies|proxy-server|proxy-pac-url|force-fieldtrials|force-fieldtrial-params|trusted-spdy-proxy|origin-to-force-quic-on|oauth2-refresh-token|unsafely-treat-insecure-origin-as-secure)=[a-zA-Z0-9\-\.\+=,_:\/"]+))$/', $flag)) {
-          $error = 'Invalid command-line option: "' . htmlspecialchars($flag) . '"';
-        }
+    if (isset($cmd) && strlen($cmd)) {
+      if (!preg_match('/^(?:(?:^|\s+)(--[\w-]+(?:=\S+|="[^"]*")?))*\s*$/', $cmd)) {
+        $error = 'Invalid command-line: "' . htmlspecialchars($cmd) . '"';
       }
     }
   }
