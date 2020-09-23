@@ -121,7 +121,7 @@
             $maxTime = GetSetting('maxtime');
             if ($maxTime && $test['timeout'] > $maxTime)
               $test['timeout'] = (int)$maxTime;
-            $test['maxTestTime'] = isset($req_maxTestTime) ? (int)$req_maxTestTime : 60;
+            //$test['maxTestTime'] = isset($req_maxTestTime) ? (int)$req_maxTestTime : 120;
             $test['connections'] = isset($req_connections) ? (int)$req_connections : 0;
             if (isset($req_private)) {
               $test['private'] = $req_private;
@@ -604,7 +604,7 @@
               $test['throttle_cpu'] = $devices[$test['mobileDevice']]['throttle_cpu'];
           }
         }
-        
+
         $test['created'] = time();
 
         // the API key requirements are for all test paths
@@ -2007,7 +2007,7 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
         $testInfo = "[test]\r\n";
         AddIniLine($testInfo, "fvonly", $test['fvonly']);
         AddIniLine($testInfo, "timeout", $test['timeout']);
-        AddIniLine($testInfo, "maxTestTime", $test["maxTestTime"]);
+        //AddIniLine($testInfo, "maxTestTime", $test["maxTestTime"]);
         $resultRuns = isset($test['discard']) ? $test['runs'] - $test['discard'] : $test['runs'];
         AddIniLine($testInfo, "runs", $resultRuns);
         AddIniLine($testInfo, "location", "\"{$test['locationText']}\"");
@@ -2060,9 +2060,9 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
                 AddIniLine($testFile, 'fvonly', '1');
             if( isset($test['timeout']) && $test['timeout'] )
                 AddIniLine($testFile, 'timeout', $test['timeout']);
-            if( isset($test['maxTestTime']) ) {
-                AddIniLine($testFile, "maxTestTime", $test["maxTestTime"]);
-            }
+            //if( isset($test['maxTestTime']) ) {
+            //    AddIniLine($testFile, "maxTestTime", $test["maxTestTime"]);
+            //}
             if( isset($test['web10']) && $test['web10'] )
                 AddIniLine($testFile, 'web10', '1');
             if( isset($test['ignoreSSL']) && $test['ignoreSSL'] )
@@ -2586,12 +2586,9 @@ function ProcessTestScript($url, &$test) {
 */
 function ValidateCommandLine($cmd, &$error) {
   if (isset($cmd) && strlen($cmd)) {
-    $flags = explode(' ', $cmd);
-    if ($flags && is_array($flags) && count($flags)) {                
-      foreach($flags as $flag) {
-        if (strlen($flag) && !preg_match('/^--(([a-zA-Z0-9\-\.\+=,_ "]+)|((data-reduction-proxy-http-proxies|proxy-server|proxy-pac-url|force-fieldtrials|force-fieldtrial-params|trusted-spdy-proxy|origin-to-force-quic-on|oauth2-refresh-token|unsafely-treat-insecure-origin-as-secure)=[a-zA-Z0-9\-\.\+=,_:\/"]+))$/', $flag)) {
-          $error = 'Invalid command-line option: "' . htmlspecialchars($flag) . '"';
-        }
+    if (isset($cmd) && strlen($cmd)) {
+      if (!preg_match('/^(?:(?:^|\s+)(--[\w-]+(?:=\S+|="[^"]*")?))*\s*$/', $cmd)) {
+        $error = 'Invalid command-line: "' . htmlspecialchars($cmd) . '"';
       }
     }
   }
