@@ -80,7 +80,7 @@ function getRequestsForStep($localPaths, $rootUrlGenerator, &$has_secure_request
           $request['index'] = $index;
           $request['number'] = $index + 1;
           if ($rootUrlGenerator) {
-            if (isset($request['body_id']) && $request['body_id'] > 0) {
+            if (isset($request['body_id']) && strlen($request['body_id'])) {
               $request['body_url'] = $rootUrlGenerator->responseBodyWithBodyId($request['body_id']);
             } elseif (@$request['body']) {
               $request['body_url'] = $rootUrlGenerator->responseBodyWithRequestNumber($request['number']);
@@ -89,12 +89,12 @@ function getRequestsForStep($localPaths, $rootUrlGenerator, &$has_secure_request
           if (!$has_secure_requests && isset($request['is_secure']) && $request['is_secure'])
               $has_secure_requests = true;
       }
-    
+
       if (!$cached && $use_raw_headers) {
         gz_file_put_contents($cache_file, json_encode($requests));
       }
     }
-    
+
     return $requests;
 }
 
@@ -155,7 +155,7 @@ function CalculateComponentTimes(&$pageData, &$requests) {
 }
 
 /**
-* Load the gzipped request file (tab deliminated).
+* Load the gzipped request file (tab-delimited).
 */
 function LoadRequests($request_file_name) {
     $requests = array();
@@ -305,7 +305,7 @@ function MergeDnsAndConnectionTimes($requests) {
 }
 
 /**
- * Compute consistent request time fields.
+ * Compute consistent request-time fields.
  *
  * Field keys:
  *   all      - Includes all activity (e.g. dns through download).
@@ -454,26 +454,43 @@ function AddHeaders(&$requests, $headers_file_name) {
 */
 function AddResponseBodyFlags(&$requests, $bodies_file_name) {
   if (is_file($bodies_file_name)) {
+    // build a list of all of the file names in the bodies zip
+    $ids = array();
+
     $zip = new ZipArchive;
     if ($zip->open($bodies_file_name) === TRUE) {
       for ($i = 0; $i < $zip->numFiles; $i++) {
         $name = $zip->getNameIndex($i);
-        $parts = explode('-', $name);
-        if (count($parts) >= 3 && stripos($name, '-body.txt') !== false) {
-          $id = trim($parts[1]);
-          foreach ($requests as &$request) {
-            if (isset($request['raw_id']) && !strcmp(trim($request['raw_id']), $id)) {
-              $request['body_id'] = $id;
-            } elseif (isset($request['request_id']) && !strcmp(trim($request['request_id']), $id)) {
-              $request['body_id'] = $id;
+        $first = strpos($name, '-');
+        $found = false;
+        if ($first > 0) {
+          $last = strrpos($name, '-body.txt');
+          if ($last > $first) {
+            $id = substr($name, $first + 1, $last - $first - 1);
+            if (strlen($id)) {
+              $ids[$id] = $id;
+              $found = true;
             }
           }
-        } else {
+        }
+        if (!$found) {
           // old-style where the files are numbered in order of request
           $index = intval($name, 10);
           if ($index && array_key_exists($index - 1, $requests)) {
             $requests[$index - 1]['body'] = true;
           }
+        }
+      }
+      $zip->close();
+    }
+
+    // match the bodies with the requests
+    if (count($ids)) {
+      foreach ($requests as &$request) {
+        if ( isset($request['raw_id']) && isset($ids[trim($request['raw_id'])]) ) {
+          $request['body_id'] = $ids[trim($request['raw_id'])];
+        } elseif (isset($request['request_id']) && isset($ids[trim($request['request_id'])])) {
+          $request['body_id'] = $ids[trim($request['request_id'])];
         }
       }
     }
@@ -529,7 +546,7 @@ function GetBasePage(&$requests) {
 
 /**
 * Build the list of dependencies for each request
-* 
+*
 * @param mixed $requests
 */
 function BuildRequestDependencies(&$requests) {
@@ -539,13 +556,13 @@ function BuildRequestDependencies(&$requests) {
         $request['loaded_by'] = array();
         RequestLoadedBy($request['number'], $requests, $request['loaded_by']);
     }
-    
+
     return $dependencies;
 }
 
 /**
-* Figure out all of the resources loaded by the given resource
-* 
+* Figure out all of the resources loaded by the given requests
+*
 * @param mixed $index
 * @param mixed $requests
 * @param mixed $map
@@ -573,8 +590,8 @@ function RequestLoads($request_number, &$requests, &$entry) {
 }
 
 /**
-* Figure out all of the resources required to load the given resource
-* 
+* Figure out all of the resources required to load the given requests
+*
 * @param mixed $index
 * @param mixed $requests
 * @param mixed $map

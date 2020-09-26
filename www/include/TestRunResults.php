@@ -247,7 +247,7 @@ class TestRunResults {
   public function hasValidMetric($metric) {
     foreach ($this->stepResults as $stepResult) {
       $value = $stepResult->getMetric($metric);
-      if (!empty($value)) {
+      if (isset($value)) {
         return true;
       }
     }
@@ -269,7 +269,7 @@ class TestRunResults {
   }
 
   /**
-   * @return bool True if any step si optimization checked, false otherwise
+   * @return bool True if any step is  optimization-checked, false otherwise
    */
   public function isOptimizationChecked() {
     foreach ($this->stepResults as $stepResult) {
@@ -286,7 +286,7 @@ class TestRunResults {
   public function getLighthouseScore() {
     $score = null;
     foreach ($this->stepResults as $stepResult) {
-      $score = $stepResult->getMetric("lighthouse.ProgressiveWebApp");
+      $score = $stepResult->getMetric("lighthouse.Performance");
       if (isset($score)) {
         return intval(($score * 100.0) + 0.5);
       }

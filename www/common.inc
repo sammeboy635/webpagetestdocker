@@ -1,6 +1,14 @@
 <?php
 require_once('./common_lib.inc');
 require_once('./plugins.php.inc');
+require_once('./util.inc');
+
+if (isset($REDIRECT_HTTPS) && $REDIRECT_HTTPS && !isSslConnection() && GetSetting('prefer_https')) {
+    $location = 'https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+    header('HTTP/1.1 301 Moved Permanently');
+    header('Location: ' . $location);
+    exit(0);
+}
 
 // if any query parameter includes a .., exit right away - likely a hack attempt
 foreach($_REQUEST as $key => $val) {
@@ -18,6 +26,14 @@ if (array_key_exists('HTTP_USER_AGENT', $_SERVER) &&
     echo "OK";
     exit(0);
 }
+// Blocked user agent strings
+if (array_key_exists('HTTP_USER_AGENT', $_SERVER) && strlen($_SERVER['HTTP_USER_AGENT'])) {
+  if (preg_match('/UAEmdDd8nuc0DvQH29vueQpMtlFduGU48pbw/i', $_SERVER['HTTP_USER_AGENT'])) {
+    header('HTTP/1.1 403 Forbidden');
+    echo "<html><body>Sorry, the request was blocked for constantly requesting invalid content, please contact us for details.";
+    exit(0);
+  }
+}
 
 
 // shared initializiation/loading code
@@ -32,6 +48,11 @@ extract($_GET, EXTR_SKIP|EXTR_PREFIX_ALL|EXTR_REFS, 'req');
 
 // add a CORS header
 header('Access-Control-Allow-Origin: *');
+
+// Prevent embedding except for pages that were explicitly designed to be embedded (video)
+if (!isset($ALLOW_IFRAME) || !$ALLOW_IFRAME) {
+  header('X-Frames-Options: sameorigin');
+}
 
 // set up a global curl context that can be used for keep-alive connections (particularly when doing bulk relays)
 if (function_exists('curl_init')) {
@@ -78,26 +99,38 @@ if (array_key_exists('HTTP_MOD_REWRITE', $_SERVER) && $_SERVER['HTTP_MOD_REWRITE
     define('VER_TIMELINE', '');       // Leave the timeline version empty
 }
 
+$privateInstall = true;
+if (array_key_exists('HTTP_HOST', $_SERVER) &&
+    stristr($_SERVER['HTTP_HOST'] , 'httparchive.webpagetest.org') === false &&
+    stristr($_SERVER['HTTP_HOST'] , 'webpagetest.org') !== false) {
+    $privateInstall = false;
+}
+
 $userIsBot = false;
-if (array_key_exists('HTTP_USER_AGENT', $_SERVER) &&
-    strlen($_SERVER['HTTP_USER_AGENT']) &&
-    preg_match('/robot|spider|crawler|indexer|WeSEE|Googlebot|YandexBot|Twitterbot|SemrushBot|Slackbot|Slack-ImgProxy|bingbot|SEOdiver|EPiServer|Wget|^$/i', $_SERVER['HTTP_USER_AGENT'])) {
-  $userIsBot = true;
+if (!$privateInstall) {
+  if (array_key_exists('HTTP_USER_AGENT', $_SERVER) &&
+      strlen($_SERVER['HTTP_USER_AGENT'])) {
+    if (preg_match('/robot|spider|crawler|indexer|WeSEE|Googlebot|YandexBot|Twitterbot|SemrushBot|Slackbot|Slack-ImgProxy|bingbot|SEOdiver|EPiServer|BlockBit|Wget|Faraday|Apache-HttpClient|^$/i', $_SERVER['HTTP_USER_AGENT'])) {
+      $userIsBot = true;
+    }
+  } else {
+    $userIsBot = true;
+  }
 }
 
 // constants
-define('VER_WEBPAGETEST', '18.02');   // webpagetest version
-define('VER_CSS', 71);           // version of the sitewide css file
-define('VER_JS', 33);            // version of the sitewide javascript file
-define('VER_JS_TEST', 39);       // version of the javascript specific to the test pages
-define('VER_JS_RUNNING', 1);     // version of the javascript specific to the test running status page
-define('UNKNOWN_TIME', -1);      // Value used as a flag for an unknown time.
-                                 // To find code that fails to check that a time
-                                 // is unknown, change this constant to a large
-                                 // negative number.
+define('VER_WEBPAGETEST', '20.06');   // webpagetest version
+define('VER_CSS', 81);                // version of the sitewide css file
+define('VER_JS', 34);                 // version of the sitewide javascript file
+define('VER_JS_TEST', 42);            // version of the javascript specific to the test pages
+define('VER_JS_RUNNING', 1);          // version of the javascript specific to the test running status page
+define('UNKNOWN_TIME', -1);           // Value used as a flag for an unknown time.
+                                      // To find code that fails to check that a time
+                                      // is unknown, change this constant to a large
+                                      // negative number.
 
 // SEO stuff
-$page_keywords = array('Webpagetest','Website Speed Test','Page Speed');
+$page_keywords = array('WebPageTest','Website Speed Test','Page Speed');
 $page_description = "Run a free website speed test from around the globe using real browsers at consumer connection speeds with detailed optimization recommendations.";
 
 $tempDir = './tmp';
@@ -128,25 +161,14 @@ if (!array_key_exists('shard_tests', $settings))
     $settings['shard_tests'] = 0;
 $max_load = GetSetting('render_max_load');
 
-$privateInstall = true;
-if (array_key_exists('HTTP_HOST', $_SERVER) &&
-    stristr($_SERVER['HTTP_HOST'] , 'httparchive.webpagetest.org') !== false &&
-    stristr($_SERVER['HTTP_HOST'] , '.webpagetest.org') !== false) {
-    $privateInstall = false;
-}
-
 // override some settings from the URI
 if (isset($_REQUEST['bulk'])) {
     $settings['noBulk'] = 0;
 }
-$is_ssl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on') || (isset($_SERVER['HTTP_SSL']) && $_SERVER['HTTP_SSL'] == 'On')) ? true : false;
+$is_ssl = isSslConnection();
 $GLOBALS['cdnPath'] = '';
 if (isset($settings['cdn']) && !$is_ssl) {
     $GLOBALS['cdnPath'] = $settings['cdn'];
-}
-$GLOBALS['ptotocol'] = 'http';
-if ($is_ssl) {
-    $GLOBALS['ptotocol'] = 'https';
 }
 
 $tz_offset = null;
@@ -204,6 +226,9 @@ if (is_dir('./forums') && (!array_key_exists('disableMybb', $settings) || !$sett
   }
   ob_end_clean();
 }
+if (isset($user)) {
+  $user = preg_replace('/[^a-zA-Z0-9@\.\-_]/', '', $user);
+}
 
 if (!$admin) {
   $this_user = null;
@@ -241,6 +266,8 @@ if( isset($_COOKIE['google_id']) && strlen($_COOKIE['google_id']) ) {
 }else{
   $owner = sha1(uniqid(uniqid('', true), true));
 }
+// Sanitize the owner string
+$owner = preg_replace('/[^a-zA-Z0-9]/', '', $owner);
 setcookie('o', $owner, time()+60*60*24*365, '/');
 
 if ($admin) {
@@ -255,15 +282,18 @@ if (isset($_REQUEST['color'])) {
 
 // Load the test-specific data
 $id = '';
-if (preg_match('/^[a-zA-Z0-9_]+$/', @$_REQUEST['test'])) {
+if (isset($_REQUEST['test']) && preg_match('/^[a-zA-Z0-9_]+$/', @$_REQUEST['test'])) {
     $id = $_REQUEST['test'];
-} elseif (preg_match('/^[a-zA-Z0-9_]+$/', @$_COOKIE['tid'])) {
+} elseif (isset($_COOKIE['tid']) && preg_match('/^[a-zA-Z0-9_]+$/', @$_COOKIE['tid'])) {
     $id = $_COOKIE['tid'];
 }
 
 $median_metric = isset($settings['medianMetric']) ? $settings['medianMetric'] : 'loadTime';
 $testLabel = '';
 if (strlen($id)) {
+    if(extension_loaded('newrelic')) {
+        newrelic_add_custom_parameter ('testID', $id);
+    }  
     if (@strlen($_REQUEST['rkey'])) {
         // We are serving a relay request, so munge the id accordingly.
         $id = trim(htmlspecialchars($_REQUEST['rkey'])) . ".$id";
@@ -332,11 +362,11 @@ if (strlen($id)) {
         if( isset($testDate) && strlen($testDate) )
             $testLabel .= " - $testDate";
     }
-    
+
     if (!isset($test)) {
         $test = array();
     }
-    
+
     if (!array_key_exists('testinfo', $test)) {
         $test['testinfo'] = array();
     }

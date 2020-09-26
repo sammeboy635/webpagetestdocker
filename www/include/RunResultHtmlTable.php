@@ -3,19 +3,22 @@
 require_once __DIR__ . '/../common_lib.inc';
 
 class RunResultHtmlTable {
-  const SPEED_INDEX_URL = "https://sites.google.com/a/webpagetest.org/docs/using-webpagetest/metrics/speed-index";
+  const SPEED_INDEX_URL = "https://github.com/WPO-Foundation/webpagetest-docs/blob/master/user/Metrics/SpeedIndex.md";
 
   const COL_LABEL = "label";
-  const COL_ABOVE_THE_FOLD = "aft";
-  const COL_USER_TIME = "userTime";
+  const COL_START_RENDER = "render";
   const COL_DOM_TIME = "domTime";
   const COL_DOM_ELEMENTS = "domElements";
-  const COL_TTI = "FirstInteractive";
   const COL_SPEED_INDEX = "SpeedIndex";
   const COL_VISUAL_COMPLETE = "visualComplete";
   const COL_RESULT = "result";
   const COL_COST = "cost";
   const COL_CERTIFICATE_BYTES = "certificate_bytes";
+  const COL_FIRST_CONTENTFUL_PAINT = 'chromeUserTiming.firstContentfulPaint';
+  const COL_LARGEST_CONTENTFUL_PAINT = 'chromeUserTiming.LargestContentfulPaint';
+  const COL_CUMULATIVE_LAYOUT_SHIFT = 'chromeUserTiming.CumulativeLayoutShift';
+  const COL_TOTAL_BLOCKING_TIME = 'TotalBlockingTime';
+  const COL_TIME_TO_INTERACTIVE = 'TimeToInteractive';
 
   /* @var TestInfo */
   private $testInfo;
@@ -41,27 +44,28 @@ class RunResultHtmlTable {
     $this->runResults = $runResults;
     $this->rvRunResults = $rvRunResults;
     $this->isMultistep = $runResults->isMultistep();
-    $this->leftOptionalColumns = array(self::COL_LABEL, self::COL_USER_TIME,
-      self::COL_TTI, self::COL_SPEED_INDEX, self::COL_VISUAL_COMPLETE, self::COL_RESULT);
+    $this->leftOptionalColumns = array(self::COL_LABEL, self::COL_FIRST_CONTENTFUL_PAINT, self::COL_SPEED_INDEX, self::COL_RESULT);
     $this->rightOptionalColumns = array(self::COL_CERTIFICATE_BYTES, self::COL_COST);
     $this->enabledColumns = array();
 
     // optional columns default setting based on data
     $this->enabledColumns[self::COL_LABEL] = $this->testInfo->getRuns() > 1 || $this->isMultistep || $this->rvRunResults;
-    $this->enabledColumns[self::COL_ABOVE_THE_FOLD] = $testInfo->hasAboveTheFoldTime();
     $this->enabledColumns[self::COL_RESULT] = true;
     $this->enabledColumns[self::COL_CERTIFICATE_BYTES] = $runResults->hasValidNonZeroMetric('certificate_bytes');
-    $checkByMetric = array(self::COL_USER_TIME, self::COL_DOM_TIME, self::COL_TTI, self::COL_SPEED_INDEX,
-                           self::COL_VISUAL_COMPLETE);
+    $checkByMetric = array(self::COL_FIRST_CONTENTFUL_PAINT, self::COL_SPEED_INDEX, self::COL_TIME_TO_INTERACTIVE,
+                           self::COL_LARGEST_CONTENTFUL_PAINT, self::COL_CUMULATIVE_LAYOUT_SHIFT, self::COL_TOTAL_BLOCKING_TIME);
     foreach ($checkByMetric as $col) {
       $this->enabledColumns[$col] = $runResults->hasValidMetric($col) ||
                                    ($rvRunResults && $rvRunResults->hasValidMetric($col));
     }
     
-    // Special-case the check for TTI
-    if (!$this->enabledColumns[self::COL_TTI]) {
-      $this->enabledColumns[self::COL_TTI] = $runResults->hasValidMetric('LastInteractive') ||
-                                   ($rvRunResults && $rvRunResults->hasValidMetric('LastInteractive'));
+    // If strict_video = 1, only show if metric is present, otherwise alway show
+    if (GetSetting('strict_video')) {
+      array_push($this->leftOptionalColumns, self::COL_START_RENDER);
+      $this->enabledColumns[self::COL_START_RENDER] = $runResults->hasValidMetric(self::COL_START_RENDER) ||
+                                                      ($rvRunResults && $rvRunResults->hasValidMetric(self::COL_START_RENDER));
+    } else {
+      $this->enabledColumns[self::COL_START_RENDER] = true;
     }
   }
 
@@ -107,9 +111,24 @@ class RunResultHtmlTable {
   }
 
   private function _createHead() {
-    $colspan = 3 + $this->_countLeftEnabledColumns();
+    $colspan = 2 + $this->_countLeftEnabledColumns() - GetSetting('strict_video', 0); // if strict_video = 1, render is optional
     $out = "<tr>\n";
     $out .= $this->_headCell("", "empty", $colspan);
+
+    // Count the web vitals metrics that we have
+    $vitals_count = 0;
+    if ($this->isColumnEnabled(self::COL_LARGEST_CONTENTFUL_PAINT)) {
+      $vitals_count++;
+    }
+    if ($this->isColumnEnabled(self::COL_CUMULATIVE_LAYOUT_SHIFT)) {
+      $vitals_count++;
+    }
+    if ($this->isColumnEnabled(self::COL_TOTAL_BLOCKING_TIME)) {
+      $vitals_count++;
+    }
+    if ($vitals_count > 0) {
+      $out .= $this->_headCell('<a href="https://web.dev/vitals/">Web Vitals</a>', "border", $vitals_count);
+    }
     $out .= $this->_headCell("Document Complete", "border", 3);
     $out .= $this->_headCell("Fully Loaded", "border", 3 + $this->_countRightEnabledColumns());
     $out .= "</tr>\n";
@@ -122,29 +141,31 @@ class RunResultHtmlTable {
         $out .= $this->_headCell("", "empty", 1);
       }
     }
-    $out .= $this->_headCell("Load Time");
-    $out .= $this->_headCell("First Byte");
-    $out .= $this->_headCell("Start Render");
-    if ($this->isColumnEnabled(self::COL_USER_TIME)) {
-      $out .= $this->_headCell("User Time");
+    $out .= $this->_headCell("First<br>Byte");
+    if ($this->isColumnEnabled(self::COL_START_RENDER)) {
+      $out .= $this->_headCell("Start<br>Render");
     }
-    if($this->isColumnEnabled(self::COL_ABOVE_THE_FOLD)) {
-      $out .= $this->_headCell("Above the Fold");
-    }
-    if ($this->isColumnEnabled(self::COL_VISUAL_COMPLETE)) {
-      $out .= $this->_headCell("Visually Complete");
+    if ($this->isColumnEnabled(self::COL_FIRST_CONTENTFUL_PAINT)) {
+      $out .= $this->_headCell('<a href="https://web.dev/fcp/">First<br>Contentful<br>Paint</a>', $vitalsBorder);
     }
     if ($this->isColumnEnabled(self::COL_SPEED_INDEX)) {
-      $out .= $this->_headCell('<a href="' . self::SPEED_INDEX_URL . '" target="_blank">Speed Index</a>');
-    }
-    if ($this->isColumnEnabled(self::COL_DOM_TIME)) {
-      $out .= $this->_headCell("DOM Element");
-    }
-    if ($this->isColumnEnabled(self::COL_TTI)) {
-      $out .= $this->_headCell("<a href=\"https://github.com/WPO-Foundation/webpagetest/blob/master/docs/Metrics/TimeToInteractive.md\">First Interactive (beta)</a>");
+      $out .= $this->_headCell('<a href="' . self::SPEED_INDEX_URL . '" target="_blank">Speed<br>Index</a>');
     }
     if ($this->isColumnEnabled(self::COL_RESULT)) {
       $out .= $this->_headCell("Result (error&nbsp;code)");
+    }
+    $vitalsBorder = "border";
+    if ($this->isColumnEnabled(self::COL_LARGEST_CONTENTFUL_PAINT)) {
+      $out .= $this->_headCell('<a href="https://web.dev/lcp/">Largest<br>Contentful<br>Paint</a>', $vitalsBorder);
+      $vitalsBorder = null;
+    }
+    if ($this->isColumnEnabled(self::COL_CUMULATIVE_LAYOUT_SHIFT)) {
+      $out .= $this->_headCell('<a href="https://web.dev/cls/">Cumulative<br>Layout<br>Shift</a>', $vitalsBorder);
+      $vitalsBorder = null;
+    }
+    if ($this->isColumnEnabled(self::COL_TOTAL_BLOCKING_TIME)) {
+      $out .= $this->_headCell('<a href="https://web.dev/tbt/">Total<br>Blocking<br>Time</a>', $vitalsBorder);
+      $vitalsBorder = null;
     }
 
     for ($i = 0; $i < 2; $i++) {
@@ -185,7 +206,7 @@ class RunResultHtmlTable {
 
   private function _headlineRow($isRepeatView, $runNumber) {
     $label = $this->_rvLabel($isRepeatView, $runNumber);
-    $colspan = 9 + $this->_countLeftEnabledColumns() + $this->_countRightEnabledColumns();
+    $colspan = 8 + $this->_countLeftEnabledColumns() + $this->_countRightEnabledColumns();
     return "<tr><td colspan='$colspan' class='separation'>$label</td></tr>\n";
   }
 
@@ -213,43 +234,71 @@ class RunResultHtmlTable {
     if ($this->isColumnEnabled(self::COL_LABEL)) {
       $out .= $this->_bodyCell("", $this->_labelColumnText($stepResult), $class);
     }
-    $out .= $this->_bodyCell($idPrefix . "LoadTime" . $idSuffix, $this->_getIntervalMetric($stepResult, 'loadTime'), $class);
     $out .= $this->_bodyCell($idPrefix . "TTFB" . $idSuffix, $this->_getIntervalMetric($stepResult, 'TTFB'), $class);
-    $out .= $this->_bodyCell($idPrefix . "StartRender" . $idSuffix, $this->_getIntervalMetric($stepResult, 'render'), $class);
-
-    if ($this->isColumnEnabled(self::COL_USER_TIME)) {
-      $out .= $this->_bodyCell($idPrefix . "UserTime" . $idSuffix, $this->_getIntervalMetric($stepResult, "userTime"), $class);
+    if ($this->isColumnEnabled(self::COL_START_RENDER)) {
+      $out .= $this->_bodyCell($idPrefix . "StartRender" . $idSuffix, $this->_getIntervalMetric($stepResult, 'render'), $class);
     }
-    if ($this->isColumnEnabled(self::COL_ABOVE_THE_FOLD)) {
-      $aft = $stepResult->getMetric("aft");
-      $aft = $aft !== null ? (number_format($aft / 1000.0, 1) . 's') : "N/A";
-      $out .= $this->_bodyCell($idPrefix . "aft" . $idSuffix, $aft, $class);
-    }
-    if ($this->isColumnEnabled(self::COL_VISUAL_COMPLETE)) {
-      $out .= $this->_bodyCell($idPrefix. "visualComplete" . $idSuffix, $this->_getIntervalMetric($stepResult, "visualComplete"), $class);
+    if ($this->isColumnEnabled(self::COL_FIRST_CONTENTFUL_PAINT)) {
+      $out .= $this->_bodyCell($idPrefix . self::COL_FIRST_CONTENTFUL_PAINT . $idSuffix, $this->_getIntervalMetric($stepResult, self::COL_FIRST_CONTENTFUL_PAINT), $class);
     }
     if($this->isColumnEnabled(self::COL_SPEED_INDEX)) {
       $speedIndex = $stepResult->getMetric("SpeedIndexCustom");
       $speedIndex = $speedIndex !== null ? $speedIndex : $stepResult->getMetric("SpeedIndex");
-      $speedIndex = $speedIndex !== null ? $speedIndex : "-";
+      $speedIndex = $speedIndex !== null ? formatMsInterval($speedIndex, 3) : "-";
       $out .= $this->_bodyCell($idPrefix . "SpeedIndex" . $idSuffix, $speedIndex, $class);
-    }
-    if ($this->isColumnEnabled(self::COL_DOM_TIME)) {
-      $out .= $this->_bodyCell($idPrefix . "DomTime" . $idSuffix, $this->_getIntervalMetric($stepResult, "domTime"), $class);
-    }
-    if ($this->isColumnEnabled(self::COL_TTI)) {
-      $value = '-';
-      if ($stepResult->getMetric("FirstInteractive"))
-        $value = $this->_getIntervalMetric($stepResult, "FirstInteractive");
-      elseif ($stepResult->getMetric("LastInteractive"))
-        $value = '&GT; ' . $this->_getIntervalMetric($stepResult, "LastInteractive");
-      $out .= $this->_bodyCell($idPrefix. "FirstInteractive" . $idSuffix, $value, $class);
     }
     if ($this->isColumnEnabled(self::COL_RESULT)) {
       $out .= $this->_bodyCell($idPrefix . "result" . $idSuffix, $this->_getSimpleMetric($stepResult, "result"), $class);
     }
 
     $borderClass = $class ? ("border " . $class) : "border";
+
+    $vitalsClass = $borderClass;
+    if ($this->isColumnEnabled(self::COL_LARGEST_CONTENTFUL_PAINT)) {
+      $value = $this->_getIntervalMetric($stepResult, self::COL_LARGEST_CONTENTFUL_PAINT);
+      $rawValue = $stepResult->getMetric(self::COL_LARGEST_CONTENTFUL_PAINT);
+      $scoreClass = 'good';
+      if ($rawValue >= 4000) {
+        $scoreClass = 'poor';
+      } elseif ($rawValue >= 2500) {
+        $scoreClass = 'ok';
+      }
+      $vclass = $vitalsClass ? ($vitalsClass . ' ' . $scoreClass) : $scoreClass;
+      $out .= $this->_bodyCell($idPrefix. self::COL_LARGEST_CONTENTFUL_PAINT . $idSuffix, $value, $vclass);
+      $vitalsClass = $class;
+    }
+
+    if ($this->isColumnEnabled(self::COL_CUMULATIVE_LAYOUT_SHIFT)) {
+      $value = round($this->_getSimpleMetric($stepResult, self::COL_CUMULATIVE_LAYOUT_SHIFT), 3);
+      $rawValue = $stepResult->getMetric(self::COL_CUMULATIVE_LAYOUT_SHIFT);
+      $scoreClass = 'good';
+      if ($rawValue >= 0.25) {
+        $scoreClass = 'poor';
+      } elseif ($rawValue >= 0.1) {
+        $scoreClass = 'ok';
+      }
+      $vclass = $vitalsClass ? ($vitalsClass . ' ' . $scoreClass) : $scoreClass;
+      $out .= $this->_bodyCell($idPrefix. self::COL_CUMULATIVE_LAYOUT_SHIFT . $idSuffix, $value, $vclass);
+      $vitalsClass = $class;
+    }
+
+    if ($this->isColumnEnabled(self::COL_TOTAL_BLOCKING_TIME)) {
+      $value = $this->_getIntervalMetric($stepResult, self::COL_TOTAL_BLOCKING_TIME);
+      if (!$this->isColumnEnabled(self::COL_TIME_TO_INTERACTIVE)) {
+        $value = '&ge; ' . $value;
+      }
+      $rawValue = $stepResult->getMetric(self::COL_TOTAL_BLOCKING_TIME);
+      $scoreClass = 'good';
+      if ($rawValue >= 600) {
+        $scoreClass = 'poor';
+      } elseif ($rawValue >= 300) {
+        $scoreClass = 'ok';
+      }
+      $vclass = $vitalsClass ? ($vitalsClass . ' ' . $scoreClass) : $scoreClass;
+      $out .= $this->_bodyCell($idPrefix. self::COL_TOTAL_BLOCKING_TIME . $idSuffix, $value, $vclass);
+      $vitalsClass = $class;
+    }
+
     $out .= $this->_bodyCell($idPrefix . "DocComplete" . $idSuffix, $this->_getIntervalMetric($stepResult, "docTime"), $borderClass);
     $out .= $this->_bodyCell($idPrefix . "RequestsDoc" . $idSuffix, $this->_getSimpleMetric($stepResult, "requestsDoc"), $class);
     $out .= $this->_bodyCell($idPrefix . "BytesInDoc" . $idSuffix, $this->_getByteMetricInKbyte($stepResult, "bytesInDoc"), $class);
@@ -311,7 +360,7 @@ class RunResultHtmlTable {
 
   private function _getIntervalMetric($step, $metric) {
     $value = $step->getMetric($metric);
-    $value = $value > 0 ? $value : -1; // -1 is UNKNOWN_TIME, but we can't include common.inc
+    $value = $value >= 0 ? $value : -1; // -1 is UNKNOWN_TIME, but we can't include common.inc
     return formatMsInterval($value, 3);
   }
 

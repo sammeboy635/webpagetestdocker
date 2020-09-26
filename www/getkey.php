@@ -1,4 +1,4 @@
-<?php 
+<?php
 include 'common.inc';
 define('BARE_UI', true);
 $prefix = GetSetting('api_key_prefix');
@@ -9,13 +9,13 @@ if (isset($_REQUEST['validate']) && strpos($_REQUEST['validate'], '.') !== false
   $prefix = $parts[0];
   $_REQUEST['validate'] = $parts[1];
 }
-$page_keywords = array('About','Contact','Webpagetest','Website Speed Test','Page Speed');
-$page_description = "Register for a WebPagetest API key.";
+$page_keywords = array('About','Contact','WebPageTest','Website Speed Test','Page Speed');
+$page_description = "Register for a WebPageTest API key.";
 ?>
 <!DOCTYPE html>
 <html>
     <head>
-        <title>WebPagetest - Get API Key</title>
+        <title>WebPageTest - Get API Key</title>
         <meta http-equiv="charset" content="iso-8859-1">
         <meta name="author" content="Patrick Meenan">
         <style type="text/css">
@@ -28,11 +28,16 @@ $page_description = "Register for a WebPagetest API key.";
             <?php
             include 'header.inc';
             ?>
-            
+
             <div class="translucent">
             <?php
             if (!GetSetting('allow_getkeys')) {
-              echo "Sorry, automatic API key registration is not permitted on the WebPagetest instance.";
+              $message_file = __DIR__ . '/settings/getkey.html';
+              if (is_file($message_file)) {
+                readfile($message_file);
+              } else {
+                echo "Sorry, automatic API-key registration is not permitted on the WebPageTest instance.";
+              }
             } elseif (isset($_REQUEST['validate'])) {
               ValidateAPIRequest();
             } elseif (isset($_REQUEST['email'])) {
@@ -42,7 +47,7 @@ $page_description = "Register for a WebPagetest API key.";
             }
             ?>
             </div>
-            
+
             <?php include('footer.inc'); ?>
         </div>
     </body>
@@ -51,7 +56,7 @@ $page_description = "Register for a WebPagetest API key.";
 <?php
 /**
 * Validate a request key that was sent to a user (and generate an API key if it validates)
-* 
+*
 */
 function ValidateAPIRequest() {
   $id = $_REQUEST['validate'];
@@ -69,13 +74,13 @@ function ValidateAPIRequest() {
       echo 'There was an internal error generating your API key.';
     }
   } else {
-    echo 'Invalid registration ID.  It is possible that your existing request expired in which case you need to fill out the <a href="?">form</a> and request an API key again.';
+    echo 'Invalid registration ID.  It is possible that your existing request expired, in which case you need to fill out the <a href="?">form</a> and request an API key again.';
   }
 }
 
 /**
-* Generate a new API key request
-* 
+* Generate a new API-key request
+*
 */
 function NewAPIRequest() {
   if (is_file(__DIR__ . '/settings/getkey.inc.php')) {
@@ -85,7 +90,7 @@ function NewAPIRequest() {
     echo 'Email Address: <input type="text" name="email"> (Required)<br><br>';
     echo 'Name: <input type="text" name="name"><br><br>';
     echo 'Company: <input type="text" name="company"><br><br>';
-    echo 'Web Site: <input type="text" name="website"><br><br>';
+    echo 'Website: <input type="text" name="website"><br><br>';
     $recaptcha = GetSetting('recaptcha_key');
     if ($recaptcha) {
       echo 'To help prevent bots, please complete the captcha:<br>';
@@ -99,7 +104,7 @@ function NewAPIRequest() {
 
 /**
 * User submitted the form. Validate the request and email a validation link.
-* 
+*
 */
 function SumbitRequest() {
   $error = null;
@@ -121,14 +126,14 @@ function SumbitRequest() {
       $error = "Please answer the captcha challenge";
     }
   }
-  
+
   if (isset($error)) {
     echo $error;
   } else {
     if (isset($_REQUEST['agree']) && $_REQUEST['agree']) {
       $email = trim($_REQUEST['email']);
       if (!preg_match('/[^@]+@[^\.]+\..+/', $email)) {
-        echo 'Please provide a valid email address';
+        echo 'Please provide a valid email address.';
       } elseif (BlockEmail($email)) {
         echo 'Sorry, registration is not permitted.  Please contact us for more information.';
       } elseif ($keyinfo = GetKeyInfo($email)) {
@@ -136,17 +141,17 @@ function SumbitRequest() {
       } elseif ($requestinfo = CreateRequest($email)) {
         EmailValidation($requestinfo);
       } else {
-        echo 'Internal generating the API key request';
+        echo 'Internal error generating the API key request.';
       }
     } else {
-      echo 'Please agree to the terms and conditions';
+      echo 'Please agree to the terms and conditions.';
     }
   }
 }
 
 /**
 * Block email domains
-* 
+*
 * @param mixed $email
 */
 function BlockEmail($email) {
@@ -172,7 +177,7 @@ function BlockEmail($email) {
 
 /**
 * Open/create the database of API keys
-* 
+*
 */
 function OpenKeysDatabase() {
   global $prefix;
@@ -187,14 +192,14 @@ function OpenKeysDatabase() {
 
 /**
 * Open/create the database of API keys
-* 
+*
 */
 function OpenRequestsDatabase() {
   global $prefix;
   try {
     $db = new SQLite3(__DIR__ . "/dat/{$prefix}_api_keys.db");
     $db->query('CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY NOT NULL,created INTEGER,email TEXT UNIQUE NOT NULL,ip TEXT NOT NULL,name TEXT,company TEXT,website TEXT,contact INTEGER)');
-    
+
     // expire requests older than a week
     $earliest = time() - 604800;
     $db->query("DELETE FROM requests WHERE created < $earliest");
@@ -205,8 +210,8 @@ function OpenRequestsDatabase() {
 }
 
 /**
-* Get existing API key info for the given email address
-* 
+* Get existing API-key info for the given email address
+*
 * @param mixed $email
 */
 function GetKeyInfo($email) {
@@ -220,8 +225,8 @@ function GetKeyInfo($email) {
 }
 
 /**
-* Get existing request the given email address
-* 
+* Get existing request for the given email address
+*
 * @param mixed $email
 */
 function CreateRequest($email) {
@@ -253,16 +258,16 @@ function CreateRequest($email) {
 }
 
 /**
-* Email the API key info to the requestor
-* 
+* Email the API-key info to the requestor
+*
 * @param mixed $info
 */
 function EmailKeyInfo($info, $display) {
   global $prefix;
   $email = $info['email'];
   $content = "Your API key is: {$prefix}.{$info['key']}\n\n";
-  $content .= "The API key is limited to {$info['key_limit']} page loads per day.  Each run, first or repeat view counts as a page load (10 runs, first and repeat view would be 20 page loads). If you need to do more testing than that allows then you should consider running a private instance: https://sites.google.com/a/webpagetest.org/docs/private-instances\n";
-  
+  $content .= "The API key is limited to {$info['key_limit']} page loads per day.  Each run, first or repeat view counts as a page load (10 runs, first and repeat view would be 20 page loads). If you need to do more testing than that allows then you should consider running a private instance: https://github.com/WPO-Foundation/webpagetest-docs/tree/master/user/Private%20Instances\n";
+
   $l = LoadLocationsIni();
   $locations = array();
   foreach ($l as $id => $loc) {
@@ -291,15 +296,15 @@ function EmailKeyInfo($info, $display) {
       }
     }
   }
-  $protocol = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on') || (isset($_SERVER['HTTP_SSL']) && $_SERVER['HTTP_SSL'] == 'On')) ? 'https' : 'http';
+  $protocol = getUrlProtocol();
   $url = "$protocol://{$_SERVER['HTTP_HOST']}/getLocations.php?f=html&k=$prefix";
-  $content .= "\nYou can see the current list of locations that are available for API testing here: $url.\n";
+  $content .= "\nThe list of current locations available for API testing here: $url.\n";
   if (count($locations)) {
     $content .= "\nThe following browser/location combinations are available:\n\n";
     foreach ($locations as $location)
       $content .= "$location\n";
   }
-  SendMessage($email, 'WebPagetest API Key', $content);
+  SendMessage($email, 'WebPageTest API Key', $content);
   if ($display)
     echo str_replace("\n", "<br>", $content);
   echo '<br><br>The API key details were also sent to ' . htmlspecialchars($email);
@@ -308,22 +313,22 @@ function EmailKeyInfo($info, $display) {
 
 /**
 * Send a validation email
-* 
+*
 * @param mixed $info
 */
 function EmailValidation($info) {
   $email = $info['email'];
   $id = $info['id'];
-  $protocol = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on') || (isset($_SERVER['HTTP_SSL']) && $_SERVER['HTTP_SSL'] == 'On')) ? 'https' : 'http';
+  $protocol = getUrlProtocol();
   $url = "$protocol://{$_SERVER['HTTP_HOST']}{$_SERVER['PHP_SELF']}?validate=$id";
-  $content = "Thank you for requesting a WebPagetest API key.  In order to assign a key we need to validate your email address.\n\nTo complete the validation and retrieve your API key please go to $url";
+  $content = "Thank you for requesting a WebPageTest API key.  In order to assign a key we need to validate your email address.\n\nTo complete the validation and retrieve your API key please go to $url";
   SendMessage($email, 'WebPagetest API Key Request', $content);
   echo 'A validation email was sent to ' . htmlspecialchars($email) . '.<br><br>Once the email arrives, follow the instructions in it to activate your API key.';
 }
 
 /**
 * Retrieve the information for an existing request
-* 
+*
 * @param string $id
 * @return mixed
 */
@@ -333,7 +338,7 @@ function GetRequestInfo($id) {
     $id = $db->escapeString($id);
     $info = $db->querySingle("SELECT * FROM requests WHERE id='$id'", true);
     $db->close();
-  }  
+  }
   return $info;
 }
 
@@ -342,12 +347,12 @@ function DeleteRequest($id) {
     $id = $db->escapeString($id);
     $db->query("DELETE FROM requests WHERE id='$id'");
     $db->close();
-  }  
+  }
 }
 
 /**
 * The request has been validated, generate the API key
-* 
+*
 * @param mixed $request
 */
 function CreateApiKey($request) {
@@ -386,28 +391,7 @@ function CreateApiKey($request) {
 }
 
 function SendMessage($to, $subject, $body) {
-  global $settings;
-
-  // send the e-mail through an SMTP server?
-  if (array_key_exists('mailserver', $settings)) {
-    require_once "Mail.php";
-    $mailServerSettings = $settings['mailserver'];
-    $mailInit = array ();
-    if (array_key_exists('host', $mailServerSettings))
-      $mailInit['host'] = $mailServerSettings['host'];
-    if (array_key_exists('port', $mailServerSettings))
-      $mailInit['port'] = $mailServerSettings['port'];
-    if (array_key_exists('useAuth', $mailServerSettings) && $mailServerSettings['useAuth']) {
-      $mailInit['auth'] = true;
-      $mailInit['username'] = $mailServerSettings[ 'username'];
-      $mailInit['password'] = $mailServerSettings['password'];
-    }
-    $smtp = Mail::factory('smtp', $mailInit);
-    $headers = array ('From' => $mailServerSettings['from'], 'To' => $to, 'Subject' => $subject);
-    $mail = $smtp->send($to, $headers, $body);
-  } else {
-    mail($to, $subject, $body);
-  }
+  mail($to, $subject, $body);
 }
 
 ?>

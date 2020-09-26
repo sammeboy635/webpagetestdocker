@@ -31,6 +31,8 @@ $screenheight = array_key_exists('screenheight', $_GET) ? $_GET['screenheight'] 
 $winver = isset($_GET['winver']) ? $_GET['winver'] : '';
 $isWinServer = isset($_GET['winserver']) ? $_GET['winserver'] : '';
 $isWin64 = isset($_GET['is64bit']) ? $_GET['is64bit'] : '';
+$browsers = isset($_GET['browsers']) ? ParseBrowserInfo($_GET['browsers']) : '';
+$key_valid = false;
 $tester = null;
 if (strlen($ec2))
   $tester = $ec2;
@@ -53,8 +55,11 @@ if (isset($locations) && is_array($locations) && count($locations) &&
   $location = trim($locations[0]);
   if (!$is_done && array_key_exists('reboot', $_GET) && GetSetting('allowReboot'))
     $is_done = GetReboot();
+  /*
+  // The legacy agents are no longer supported. Server-based updating is now disabled.
   if (!$is_done && array_key_exists('ver', $_GET))
     $is_done = GetUpdate();
+  */
   foreach ($locations as $loc) {
     $location = trim($loc);
     if (!$is_done && strlen($location)) {
@@ -197,8 +202,12 @@ function TestToJSON($testInfo) {
                   $testJson['customMetrics'][$metric] = $code;
                 }
               }
+            } elseif ($key == 'heroElements') {
+              $testJson['heroElements'] = json_decode(base64_decode($value));
             } elseif ($key == 'injectScript') {
               $testJson['injectScript'] = base64_decode($value);
+            } elseif ($key == 'lighthouseConfig') {
+              $testJson['lighthouseConfig'] = base64_decode($value);
             } elseif( filter_var($value, FILTER_VALIDATE_INT) !== false ) {
               $testJson[$key] = intval($value);
             } elseif( filter_var($value, FILTER_VALIDATE_FLOAT) !== false ) {
@@ -217,7 +226,7 @@ function TestToJSON($testInfo) {
   if (isset($_REQUEST['apk']) && is_file(__DIR__ . '/update/apk.dat')) {
     $apk_info = json_decode(file_get_contents(__DIR__ . '/update/apk.dat'), true);
     if (isset($apk_info) && is_array($apk_info) && isset($apk_info['packages']) && is_array($apk_info['packages'])) {
-      $protocol = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on') || (isset($_SERVER['HTTP_SSL']) && $_SERVER['HTTP_SSL'] == 'On')) ? 'https' : 'http';
+      $protocol = getUrlProtocol();
       $update_path = dirname($_SERVER['PHP_SELF']) . '/update/';
       $base_uri = "$protocol://{$_SERVER['HTTP_HOST']}$update_path";
       foreach ($apk_info['packages'] as $package => $info)
@@ -237,6 +246,7 @@ function GetJob() {
 
   global $location;
   global $key;
+  global $key_valid;
   global $pc;
   global $ec2;
   global $tester;
@@ -248,6 +258,7 @@ function GetJob() {
   global $winver;
   global $isWinServer;
   global $isWin64;
+  global $browsers;
 
   $workDir = "./work/jobs/$location";
   $locInfo = GetLocationInfo($location);
@@ -257,8 +268,8 @@ function GetJob() {
   if (strpos($location, '..') == false &&
       strpos($location, '\\') == false &&
       strpos($location, '/') == false &&
-      (!strlen($locKey) || !strcmp($key, $locKey))) {
-    
+      (!strlen($locKey) || $key_valid || !strcmp($key, $locKey))) {
+    $key_valid = true;
     GetTesterIndex($locInfo, $testerIndex, $testerCount, $offline);
     
     if (!$offline) {
@@ -337,7 +348,13 @@ function GetJob() {
         
         if ($is_json) {
           $testJson = TestToJSON($testInfo);
-          echo json_encode($testJson);
+          if(!isset($testJson['run']) && 
+	        GetSetting("shard_tests") && 
+			$testJson['type'] != 'traceroute'){
+            logTestMsg($testId,"Tried to start sharded test with no runs set");
+          } else {
+            echo json_encode($testJson);
+          }
         } else {
           echo $testInfo;
         }
@@ -362,6 +379,8 @@ function GetJob() {
       $testerInfo['isWinServer'] = $isWinServer;
       $testerInfo['isWin64'] = $isWin64;
       $testerInfo['test'] = '';
+      if (isset($browsers) && count(array_filter($browsers, 'strlen')))
+        $testerInfo['browsers'] = $browsers;
       if (isset($testId))
         $testerInfo['test'] = $testId;
       UpdateTester($location, $tester, $testerInfo);
@@ -589,5 +608,23 @@ function GetReboot() {
     echo "Reboot";
   }
   return $reboot;
+}
+
+/**
+* Parse browser and version info
+* 
+*/
+function ParseBrowserInfo($browerString){
+  $browserInfo = array();
+  if($browerString){
+      foreach(explode(",", $browerString) as $info){
+          $data = explode(':', $info);
+          if($data[0] && $data[1]){
+              $browserInfo[$data[0]] = $data[1];
+          }
+      }
+  }
+
+  return $browserInfo;
 }
 ?>

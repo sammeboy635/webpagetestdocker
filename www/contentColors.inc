@@ -11,6 +11,7 @@ function GetRequestColors($content_type, $thumbnail, $is_mime,
         $colors = array(
             'error'    => array(204,0,0),
             'warning'  => array(255,56,166),
+            'wait'     => array(255,254,214),
             'dns'      => array(55, 123, 53),
             'connect'  => array(177,73,62),
             'ssl'      => array(69, 110, 175),
@@ -22,6 +23,7 @@ function GetRequestColors($content_type, $thumbnail, $is_mime,
         // classic colors
         if ($thumbnail) {
             $colors = array(
+                'wait'     => array(255,254,214),
                 'dns'      => array(48,150,158),
                 'connect'  => array(255, 157, 66),
                 'ssl'      => array(213,102, 223),
@@ -31,6 +33,7 @@ function GetRequestColors($content_type, $thumbnail, $is_mime,
                 );
         } else {
             $colors = array(
+                'wait'     => array(255,254,214),
                 'dns'      => array(0,123,132),
                 'connect'  => array(255, 123, 0),
                 'ssl'      => array(207, 37, 223),
@@ -122,7 +125,7 @@ function ContentType($mime, $url = null) {
           $content_type = 'css';
         elseif ($ext == '.htm' || $ext == '.html')
           $content_type = 'html';
-        elseif ($ext == '.png' || $ext == '.gif' || $ext == '.jpg')
+        elseif ($ext == '.png' || $ext == '.gif' || $ext == '.jpg' || $ext == '.avif')
           $content_type = 'image';
         elseif ($ext == '.swf')
           $content_type = 'flash';

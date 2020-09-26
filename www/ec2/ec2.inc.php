@@ -123,6 +123,8 @@ function EC2_StartInstance($ami) {
         $user_data .= " wpt_password=$wpt_password";
     if (isset($wpt_validcertificate) && strlen($wpt_validcertificate))
         $user_data .= " wpt_validcertificate=$wpt_validcertificate";
+    if (isset($wpt_url) && strlen($wpt_url))
+        $user_data .= " wpt_url=$wpt_url";
     if (!$size)
       $size = 'm3.medium';
     $started = EC2_LaunchInstance($region, $ami, $size, $user_data, $loc);
@@ -578,6 +580,12 @@ function EC2_LaunchInstance($region, $ami, $size, $user_data, $loc) {
       $subnetId = GetSetting("EC2.$region.subnetId");
       if ($subnetId) {
         $ec2_options['SubnetId'] = $subnetId;
+      }
+	    
+      //add/modify the KeyName if present in config
+      $keyName = GetSetting("EC2.$region.keyName");
+      if ($keyName) {
+        $ec2_options['KeyName'] = $keyName;
       }
 
       $response = $ec2->runInstances ( $ec2_options );

@@ -15,10 +15,10 @@ for($offset = 0; $offset <= $days; $offset++)
 {
     $dayCount = array();
 
-    // figure out the name of the log file
+    // figure out the name of the logfile
     $fileName = './logs/' . $targetDate->format("Ymd") . '.log';
 
-    // load the log file into an array of lines
+    // load the logfile into an array of lines
     $lines = file($fileName, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     if( $lines) {
       foreach($lines as &$line) {
@@ -60,23 +60,27 @@ for($offset = 0; $offset <= $days; $offset++)
 arsort($counts);
 
 
-$title = 'WebPagetest - Check URLs';
+$title = 'WebPageTest - Check URLs';
 include 'admin_header.inc';
 
 echo '<table class="table"><tr><th>Total</th>';
-foreach( $dayCounts as $index => &$dayCount ) {
-    echo "<th>Day $index</th>";
+if ($days < 15) {
+  foreach( $dayCounts as $index => &$dayCount ) {
+      echo "<th>Day $index</th>";
+  }
 }
 echo '<th>URL Host</th></tr>';
 
 foreach($counts as $url => $count) {
     if( $count > 50 ) {
         echo "<tr><td>$count</td>";
-        foreach( $dayCounts as $index => &$dayCount ) {
-            $c = 0;
-            if( isset($dayCount[$url]) )
-                $c = $dayCount[$url];
-            echo "<td>$c</td>";
+        if ($days < 15) {
+          foreach( $dayCounts as $index => &$dayCount ) {
+              $c = 0;
+              if( isset($dayCount[$url]) )
+                  $c = $dayCount[$url];
+              echo "<td>$c</td>";
+          }
         }
         $blocked = FQDNBlocked($url) ? ' (Blocked)' : '';
         echo "<td>$url$blocked</td></tr>\n";

@@ -5,7 +5,7 @@ require_once(__DIR__ . '/video/visualProgress.inc.php');
 
 /**
 * Load the page results directly from the results files
-* 
+*
 * @param mixed $id
 * @param mixed $testPath
 * @param mixed $run
@@ -13,7 +13,7 @@ require_once(__DIR__ . '/video/visualProgress.inc.php');
 */
 function loadAllPageData($testPath) {
   $ret = array();
-  
+
   // go in order for the number of runs there are supposed to be
   if (is_file("$testPath/testinfo.ini")) {
     $ini = parse_ini_file("$testPath/testinfo.ini", true);
@@ -23,14 +23,14 @@ function loadAllPageData($testPath) {
     $completed = true;
     if ($testInfo && (!array_key_exists('completed', $testInfo) || !$testInfo['completed']))
       $completed = false;
-      
+
     for( $run = 1; $run <= $runs; $run++ ) {
       // only load page data for individual runs that are complete (or if the whole test is complete)
       if ($completed || !$testInfo || IsTestRunComplete($run, $testInfo)) {
         $data = loadPageRunData($testPath, $run, 0, $testInfo);
         if( isset($data) )
           $ret[$run][0] = $data;
-        
+
         if( !$fvonly ) {
           unset( $data );
           $data = loadPageRunData($testPath, $run, 1, $testInfo);
@@ -40,7 +40,7 @@ function loadAllPageData($testPath) {
       }
     }
   }
-  
+
   return $ret;
 }
 
@@ -67,16 +67,16 @@ function loadPageRunData($testPath, $run, $cached, $testInfo = null) {
  * @return array|null Associative array with data for the given run or null on failure
  */
 function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
-  $cacheVer = 8;
+  $cacheVer = 10;
   $cacheFile = $localPaths->pageDataCacheFile($cacheVer);
   $ret = null;
-  if (gz_is_file($cacheFile)) {
+  if (!isset($_REQUEST['recalculate']) && gz_is_file($cacheFile)) {
     $ret = json_decode(gz_file_get_contents($cacheFile), true);
     if (!isset($ret['result'])) {
       $ret = null;
     }
   }
-  
+
   if (!isset($ret) || !is_array($ret)) {
     $ret = loadPageData($localPaths->pageDataFile());
     if (!isset($ret) || !is_array($ret) || !count($ret))
@@ -88,7 +88,7 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
     if (array_key_exists('basic', $_REQUEST) && $_REQUEST['basic'])
       $basic_results = true;
 
-    // Load any raw result data from the test    
+    // Load any raw result data from the test
     if (gz_is_file($localPaths->pageDataJsonFile())) {
       $pd = json_decode(gz_file_get_contents($localPaths->pageDataJsonFile()), true);
       if ($pd && is_array($pd) && count($pd)) {
@@ -118,14 +118,21 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
           }
         }
       }
-      
+
       // Load main-thread interactive windows if available
       if (gz_is_file($localPaths->interactiveFile())) {
         $interactive = json_decode(gz_file_get_contents($localPaths->interactiveFile()), true);
-        if (isset($interactive) && is_array($interactive) && count($interactive))
+        if (isset($interactive) && is_array($interactive))
           $ret['interactivePeriods'] = $interactive;
       }
-      
+
+      // Load the long tasks list
+      if (gz_is_file($localPaths->longTasksFile())) {
+        $long_tasks = json_decode(gz_file_get_contents($localPaths->longTasksFile()), true);
+        if (isset($long_tasks) && is_array($long_tasks))
+          $ret['longTasks'] = $long_tasks;
+      }
+
       // Load the diagnostic test timing information if available
       if (gz_is_file($localPaths->testTimingFile())) {
         $entries = array();
@@ -223,26 +230,39 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
           // Create top-level metrics for each as well
           foreach ($processing as $key => $value)
             $ret["cpu.$key"] = $value;
-          if (isset($ret['docTime']) && $ret['docTime']) {    
-            $processing = GetDevToolsCPUTimeForStep($localPaths, $ret['docTime']);    
-            if (isset($processing) && is_array($processing) && count($processing)) {    
-              $ret['cpuTimesDoc'] = $processing;      
+          if (isset($ret['docTime']) && $ret['docTime']) {
+            $processing = GetDevToolsCPUTimeForStep($localPaths, $ret['docTime']);
+            if (isset($processing) && is_array($processing) && count($processing)) {
+              $ret['cpuTimesDoc'] = $processing;
             }
           }
         }
       }
-      
+
       // See if there is Chrome trace user timing data to load.
       // Do this after the CPU slice calculations so the trace processing has already run.
       if (gz_is_file($localPaths->chromeUserTimingFile())) {
-        $user_timing = ParseUserTiming($localPaths->chromeUserTimingFile());
+        $browser_version = null;
+        if (isset($ret['browser_version']) && strlen($ret['browser_version'])) {
+          $browser_version = floatval($ret['browser_version']);
+        }
+        $layout_shifts = array();
+        $user_timing = ParseUserTiming($localPaths->chromeUserTimingFile(), $browser_version, $layout_shifts);
         if (isset($user_timing) && is_array($user_timing)) {
           $ret["chromeUserTiming"] = $user_timing;
           foreach($user_timing as $value) {
             $key = "chromeUserTiming.{$value['name']}";
-            if (!isset($ret[$key]) || $value['time'] > $ret[$key])
-              $ret[$key] = $value['time'];
+            if (isset($value['time'])) {
+              if (!isset($ret[$key]) || $value['time'] > $ret[$key]) {
+                $ret[$key] = $value['time'];
+              }
+            } elseif (isset($value['value'])) {
+              $ret[$key] = $value['value'];
+            }
           }
+        }
+        if (count($layout_shifts)) {
+          $ret['LayoutShifts'] = $layout_shifts;
         }
       }
 
@@ -261,43 +281,62 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
           $ret["priorityStreams"] = $priority_streams;
         }
       }
-      
-      // Calculate Time to Interactive if we have First Meaningful Paint and interactive Windows
+
+      // Calculate Time to Interactive if we have First Contentful Paint and interactive Windows
       if (isset($ret['interactivePeriods']) && is_array($ret['interactivePeriods']) && count($ret['interactivePeriods'])) {
         $seek_start = 0;
         $TTI = null;
-        if (isset($ret['chromeUserTiming.firstContentfulPaint']) && $ret['chromeUserTiming.firstContentfulPaint'] > 0)
-          $seek_start = $ret['chromeUserTiming.firstContentfulPaint'];
-        elseif (isset($ret['render']) && $ret['render'] > 0)
+        $last_interactive = 0;
+        $measurement_end = 0;
+        $max_fid = null;
+        if (isset($ret['render']) && $ret['render'] > 0)
           $seek_start = $ret['render'];
+        elseif (isset($ret['chromeUserTiming.firstContentfulPaint']) && $ret['chromeUserTiming.firstContentfulPaint'] > 0)
+          $seek_start = $ret['chromeUserTiming.firstContentfulPaint'];
+        elseif (isset($ret['firstPaint']) && $ret['firstPaint'] > 0)
+          $seek_start = $ret['firstPaint'];
+        $DCL = null;
+        if (isset($ret['domContentLoadedEventEnd'])) {
+          $DCL = $ret['domContentLoadedEventEnd'];
+        }
+        $long_tasks = null;
+        if (isset($ret['longTasks'])) {
+          $long_tasks = $ret['longTasks'];
+        }
         if ($seek_start > 0) {
-          $TTI = CalculateTimeToInteractive($localPaths, $seek_start, $ret['interactivePeriods'], $measurement_end, $first_interactive);
+          $TTI = CalculateTimeToInteractive($localPaths, $seek_start, $ret['interactivePeriods'], $long_tasks, $measurement_end, $first_interactive, $last_interactive, $total_blocking_time, $max_fid, $DCL);
         }
         if (isset($first_interactive) && $first_interactive > 0) {
-          if (isset($ret['domContentLoadedEventEnd']) && $ret['domContentLoadedEventEnd'] > $first_interactive)
-            $first_interactive = $ret['domContentLoadedEventEnd'];
           $ret['FirstInteractive'] = $first_interactive;
         }
         if (isset($TTI) && $TTI > 0) {
-          if (isset($ret['domContentLoadedEventEnd']) && $ret['domContentLoadedEventEnd'] > $TTI)
-            $TTI = $ret['domContentLoadedEventEnd'];
           $ret['TimeToInteractive'] = $TTI;
         }
-        $measurement_end = 0;
-        $last_interactive = 0;
-        foreach ($ret['interactivePeriods'] as $window) {
-          if ($window[1] > $measurement_end) {
-            $measurement_end = max($window[1], $seek_start);
-            $last_interactive = max($window[0], $seek_start);
-          }
+        if (isset($max_fid)) {
+          $ret['maxFID'] = $max_fid;
         }
         if ($measurement_end > 0)
           $ret['TTIMeasurementEnd'] = $measurement_end;
         if ($last_interactive > 0)
           $ret['LastInteractive'] = $last_interactive;
+        if (!isset($ret['TimeToInteractive']) &&
+            $measurement_end > 0 &&
+            $last_interactive > 0 &&
+            $measurement_end - $last_interactive >= 5000) {
+          $ret['TimeToInteractive'] = $last_interactive;
+          if (!isset($ret['FirstInteractive'])) {
+            $ret['FirstInteractive'] = $last_interactive;
+          }
+        }
+        if (isset($ret['FirstInteractive'])) {
+          $ret['FirstCPUIdle'] = $ret['FirstInteractive'];
+        }
+        if (isset($total_blocking_time)) {
+          $ret['TotalBlockingTime'] = $total_blocking_time;
+        }
       }
     }
-    
+
     // For visual tests (black-box browser testing) use the visual metrics as the base timings
     if (!empty($ret) &&
         isset($ret['visualTest']) &&
@@ -307,7 +346,7 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
       $ret['docTime'] = $ret['visualComplete'];
       $ret['fullyLoaded'] = $ret['lastVisualChange'];
     }
-    
+
     // See if we have pcap-based versions of the various metrics
     if (!empty($ret)) {
       if ((!isset($ret['bytesIn']) || !$ret['bytesIn']) && isset($ret['pcapBytesIn']) && $ret['pcapBytesIn'])
@@ -386,7 +425,7 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
         gz_file_put_contents($cacheFile, json_encode($ret));
     }
   }
-  
+
   if (!empty($ret) && isset($ret['testTiming']) &&
       isset($testInfo['started']) &&
       $testInfo['completed'] &&
@@ -398,7 +437,7 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
     if (!isset($ret['requestsFull']) && isset($ret['requests'])) {
       $ret['requestsFull'] = $ret['requests'];
     }
-    
+
     // see if there is request analysis that needs to be added
     if (gz_is_file($localPaths->requestsAnalysisFile())) {
       $analysis = json_decode(gz_file_get_contents($localPaths->requestsAnalysisFile()), true);
@@ -448,21 +487,47 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
           }
         }
       }
-    }  
+    }
   }
-  
+
+  $hero_elements_file = $localPaths->heroElementsJsonFile();
+  if (gz_is_file($hero_elements_file)) {
+    $hero_elements = json_decode(gz_file_get_contents($hero_elements_file), true);
+    if ($hero_elements) {
+      $ret['heroElements'] = array();
+      $ret['heroElementTimes'] = array();
+      if (isset($hero_elements['heroes'])) {
+        $ret['heroElements'] = $hero_elements['heroes'];
+      }
+      if (isset($hero_elements['timings'])) {
+        foreach ($hero_elements['timings'] as $timing) {
+          if (isset($timing['value'])) {
+            $ret['heroElementTimes'][$timing['name']] = $timing['value'];
+            $ret["heroElementTimes.{$timing['name']}"] = $timing['value'];
+          }
+        }
+      }
+
+      foreach (['FirstPaintedHero', 'LastPaintedHero'] as $metric) {
+        if (isset($ret['heroElementTimes'][$metric])) {
+          $ret[$metric] = $ret['heroElementTimes'][$metric];
+        }
+      }
+    }
+  }
+
   if (isset($ret['fullyLoaded']))
     $ret['fullyLoaded'] = intval(round($ret['fullyLoaded']));
-  
+
   if (empty($ret))
     $ret = null;
-    
+
   return $ret;
 }
 
 /**
 * Load the page data from the specified file
-* 
+*
 * @param mixed $file
 */
 function loadPageData($file)
@@ -472,7 +537,7 @@ function loadPageData($file)
     if( $lines)
     {
         // loop through each line in the file until we get a data record
-        foreach($lines as $linenum => $line) 
+        foreach($lines as $linenum => $line)
         {
             $parseLine = str_replace("\t", "\t ", $line);
             $fields = explode("\t", $parseLine);
@@ -557,7 +622,7 @@ function loadPageData($file)
                 if ((isset($fields[104]) && strlen(trim($fields[104])))) $ret['visualComplete'] = intval(trim($fields[104]));
                 if ((isset($fields[105]) && strlen(trim($fields[105])))) $ret['SpeedIndex'] = intval(trim($fields[105]));
                 if ((isset($fields[106]) && strlen(trim($fields[106])))) $ret['certificate_bytes'] = intval(trim($fields[106]));
-                
+
                 $ret['date'] = strtotime(trim($fields[0]) . ' ' . trim($fields[1]));
                 if (!strlen($ret['pageSpeedVersion']))
                     $ret['pageSpeedVersion'] = '1.9';
@@ -566,20 +631,20 @@ function loadPageData($file)
             }
         }
     }
-    
+
     return $ret;
 }
 
 /**
 * Find the median run and use it for the results
-* 
+*
 * @param mixed $pageData
 */
 function calculatePageStats(&$pageData, &$fv, &$rv)
 {
     $fvCount = 0;
     $rvCount = 0;
-    
+
     // calculate the averages
     if( count($pageData) ) {
         foreach( $pageData as $run => $data ) {
@@ -634,13 +699,13 @@ function calculatePageStats(&$pageData, &$fv, &$rv)
         }
     }
 
-    // calculate the first view stats    
+    // calculate the first view stats
     if( isset($fv) && isset($metrics) && $fvCount > 0 )
     {
         foreach ($metrics as $metric)
           if (is_numeric($fv[$metric]))
             $fv[$metric] /= (double)$fvCount;
-        
+
         // go through and find the run closest to the average
         $closest = -1;
         $distance = 10000000000;
@@ -657,18 +722,18 @@ function calculatePageStats(&$pageData, &$fv, &$rv)
                 }
             }
         }
-        
+
         if( $closest != -1 )
             $fv['avgRun'] = $closest;
     }
 
-    // calculate the repeat view stats    
+    // calculate the repeat view stats
     if( isset($rv) && isset($metrics) && $rvCount > 0 )
     {
         foreach ($metrics as $metric)
           if (is_numeric($rv[$metric]))
             $rv[$metric] /= (double)$rvCount;
-        
+
         // go through and find the run closest to the average
         $closest = -1;
         $distance = 10000000000;
@@ -685,7 +750,7 @@ function calculatePageStats(&$pageData, &$fv, &$rv)
                 }
             }
         }
-        
+
         if( $closest != -1 )
             $rv['avgRun'] = $closest;
     }
@@ -696,7 +761,7 @@ function calculatePageStats(&$pageData, &$fv, &$rv)
  * corresponding to the median (or lower of two middle values) of $metric,
  * unless the "medianRun" parameter is set to "fastest",
  * in which case it returns the index of the fastest run.
-* 
+*
 * @param mixed $pageData
 * @param mixed $cached
 */
@@ -706,11 +771,11 @@ function GetMedianRun(&$pageData, $cached, $metric = null) {
     $run = 0;
     $cached = $cached ? 1:0;
     $times = values($pageData, $cached, $metric, true);
-            
+
     if (!count($times)) {
       $times = values($pageData, $cached, $metric, false);
     }
-    
+
     $count = count($times);
     if( $count > 1 ) {
         asort($times);
@@ -734,18 +799,18 @@ function GetMedianRun(&$pageData, $cached, $metric = null) {
             break;
         }
     }
-    
+
     // fall back to loadTime if we failed to get a run with the specified metric
     if (!$run && $metric != 'loadTime') {
         $run = GetMedianRun($pageData, $cached, 'loadTime');
     }
-    
+
     return $run;
 }
 
 /**
 * Count the number of tests with successful results
-* 
+*
 * @param mixed $pageData
 * @param mixed $cached
 */
@@ -757,13 +822,13 @@ function CountSuccessfulTests(&$pageData, $cached)
         if( successfulRun($run[$cached]) )
             $count++;
     }
-    
+
     return $count;
 }
 
 /**
 * Calculate some stats for the given metric from the page data
-* 
+*
 * @param mixed $pageData
 * @param mixed $cached
 * @param mixed $metric
@@ -779,7 +844,7 @@ function CalculateAggregateStats(&$pageData, $cached, $metric, &$median, &$avg, 
     $count = 0;
     $min = null;
     $max = null;
-    
+
     // first pass, calculate the average and array of values for grabbing the median
     $values = values($pageData, $cached, $metric, true);
     $sum = array_sum($values);
@@ -792,7 +857,7 @@ function CalculateAggregateStats(&$pageData, $cached, $metric, &$median, &$avg, 
         $median = $values[$medianIndex];
         $max = end($values);
         $min = reset($values);
-        
+
         // pass 2, calculate the standard deviation
         $sum = 0;
         foreach($values as $value){
@@ -800,13 +865,13 @@ function CalculateAggregateStats(&$pageData, $cached, $metric, &$median, &$avg, 
         }
         $stdDev = sqrt($sum / $count);
     }
-    
+
     return $count;
 }
 
 /**
 * Calculate the standard deviation for the provided metric
-* 
+*
 */
 function PageDataStandardDeviation($pageData, $metric, $cached) {
     $ret = null;
@@ -836,8 +901,8 @@ function PageDataStandardDeviation($pageData, $metric, $cached) {
 
 /**
  * Load the reported user timings data for the given run
- * 
- * @param array $pageData A reference to the pageData array to load the user timing data into 
+ *
+ * @param array $pageData A reference to the pageData array to load the user timing data into
  * @param mixed $userTimingFile
  */
 function loadUserTimingData(&$pageData, $userTimingFile) {
@@ -922,53 +987,141 @@ function CompareTimestamps($a, $b) {
   return ($a['ts'] < $b['ts']) ? -1 : 1;
 }
 
-function ParseUserTiming($file) {
+function ParseUserTiming($file, $browser_version, &$layout_shifts) {
   $user_timing = null;
   $events = json_decode(gz_file_get_contents($file), true);
   if (isset($events) && is_array($events)) {
     usort($events, 'CompareTimestamps');
-    $main_frame = null;
     $start_time = null;
+    // Make a first pass looking to see if the start time is explicitly set
+    foreach ($events as $event) {
+      if (is_array($event) && isset($event['startTime'])) {
+        $start_time = $event['startTime'];
+      }
+    }
+    
+    // Make a pass looking for explicitly tagged main frames
+    $main_frames = array();
+    foreach ($events as $event) {
+      if (is_array($event) &&
+          isset($event['name']) &&
+          isset($event['args']['frame']) &&
+          !in_array($event['args']['frame'], $main_frames)) {
+        $is_main_frame = false;
+        if (isset($event['args']['data']['isLoadingMainFrame']) &&
+            $event['args']['data']['isLoadingMainFrame'] &&
+            isset($event['args']['data']['documentLoaderURL']) &&
+            strlen($event['args']['data']['documentLoaderURL'])) {
+          $is_main_frame = true;
+        } elseif (isset($event['args']['data']['isMainFrame']) && $event['args']['data']['isMainFrame']) {
+          $is_main_frame = true;
+        } elseif ($event['name'] == 'markAsMainFrame') {
+          $is_main_frame = true;
+        }
+        if ($is_main_frame) {
+          $main_frames[] = $event['args']['frame'];
+        }
+      }
+    }
     // Find the first navigation to determine which is the main frame
     foreach ($events as $event) {
       if (is_array($event) && isset($event['name']) && isset($event['ts'])) {
         if (!isset($start_time)) {
           $start_time = $event['ts'];
         }
-        if ($event['name'] == 'navigationStart' ||
-            $event['name'] == 'unloadEventStart' ||
-            $event['name'] == 'redirectStart' ||
-            $event['name'] == 'domLoading') {
+        if (!count($main_frames) &&
+            ($event['name'] == 'navigationStart' ||
+             $event['name'] == 'unloadEventStart' ||
+             $event['name'] == 'redirectStart' ||
+             $event['name'] == 'domLoading')) {
           if (isset($event['args']['frame'])) {
-            $main_frame = $event['args']['frame'];
+            $main_frames[] = $event['args']['frame'];
             break;
           }
         }
       }
     }
-    if (isset($main_frame) && isset($start_time)) {
+    if (count($main_frames) && isset($start_time)) {
+      // Pre-process the "LargestXXX" events, just recording the biggest one
+      $largest = [];
       foreach ($events as $event) {
         if (is_array($event) &&
             isset($event['name']) &&
-            isset($event['args']['frame']) &&
             isset($event['ts']) &&
-            $event['name'] != 'navigationStart' &&
-            $event['args']['frame'] == $main_frame &&
-            ($event['ts'] >= $start_time || isset($event['args']['value']))) {
-          if (!isset($user_timing)) {
-            $user_timing = array();
-          }
+            isset($event['args']['frame']) && in_array($event['args']['frame'], $main_frames) &&
+            ($event['ts'] >= $start_time || isset($event['args']['value'])) &&
+            stripos($event['name'], 'Largest') === 0 &&
+            isset($event['args']['data']['size'])) {
           $name = $event['name'];
-          $entry = array('name' => $name);
-          if (isset($event['args']['value'])) {
-            $entry['time'] = $event['args']['value'];
-          } else {
-            $elapsed_usec = $event['ts'] - $start_time;
-            $elapsed_ms = intval($elapsed_usec / 1000.0);
-            $entry['time'] = $elapsed_ms;
+          if (!isset($largest[$name]) || $event['args']['data']['size'] > $largest[$name]['args']['data']['size']) {
+            $time = null;
+            if (isset($event['args']['value'])) {
+              $time = $event['args']['value'];
+            } else {
+              $elapsed_usec = $event['ts'] - $start_time;
+              $elapsed_ms = intval($elapsed_usec / 1000.0);
+              $time = $elapsed_ms;
+            }
+            if (isset($event['args']['data']['durationInMilliseconds'])) {
+              $time = $event['args']['data']['durationInMilliseconds'];
+            }
+            if (isset($time)) {
+              $event['time'] = $time;
+              $largest[$name] = $event;
+            }
           }
-          $user_timing[] = $entry;
         }
+      }
+
+      $cumulative_layout_shift = null;
+      if (isset($browser_version) && $browser_version >= 81) {
+        $cumulative_layout_shift = 0.0;
+        foreach ($events as $event) {
+          if (is_array($event) &&
+              isset($event['name']) &&
+              isset($event['ts']) &&
+              isset($event['args']['frame']) && in_array($event['args']['frame'], $main_frames) &&
+              ($event['ts'] >= $start_time || isset($event['args']['value']))) {
+            if (!isset($user_timing)) {
+              $user_timing = array();
+            }
+            $name = $event['name'];
+            $time = null;
+            if (isset($event['args']['value'])) {
+              $time = $event['args']['value'];
+            } else {
+              $elapsed_usec = $event['ts'] - $start_time;
+              $elapsed_ms = intval($elapsed_usec / 1000.0);
+              $time = $elapsed_ms;
+            }
+            if (isset($event['args']['data']['durationInMilliseconds'])) {
+              $time = $event['args']['data']['durationInMilliseconds'];
+            }
+            if ($name == "LayoutShift" &&
+                isset($event['args']['data']['is_main_frame']) &&
+                $event['args']['data']['is_main_frame'] &&
+                isset($event['args']['data']['cumulative_score'])) {
+              $cumulative_layout_shift = $event['args']['data']['cumulative_score'];
+              if (isset($time)) {
+                $shift = array('time' => $time, 'cumulative_score' => $event['args']['data']['cumulative_score']);
+                if (isset($event['args']['data']['score'])) {
+                  $shift['score'] = $event['args']['data']['score'];
+                }
+                $layout_shifts[] = $shift;
+              }
+            }
+            if (isset($name) && isset($time) && !isset($largest[$name])) {
+              $user_timing[] = array('name' => $name, 'time' => $time);
+            }
+          }
+        }
+      }
+
+      foreach ($largest as $name => $event) {
+        $user_timing[] = array('name' => $event['name'], 'time' => $event['time']);
+      }
+      if (isset($cumulative_layout_shift)) {
+        $user_timing[] = array('name' => 'CumulativeLayoutShift', 'value' => $cumulative_layout_shift);
       }
     }
   }
@@ -977,14 +1130,25 @@ function ParseUserTiming($file) {
 
 /**
 * Time To Interactive: https://github.com/WPO-Foundation/webpagetest/blob/master/docs/Metrics/TimeToInteractive.md
-* 
+*
 * @param mixed $localPaths
 * @param mixed $firstMeaningfulPaint
 * @param mixed $interactiveWindows
 */
-function CalculateTimeToInteractive($localPaths, $startTime, $interactiveWindows, &$measurement_end, &$first_interactive) {
+function CalculateTimeToInteractive($localPaths, $startTime, $interactiveWindows, $long_tasks, &$measurement_end, &$first_interactive, &$last_interactive, &$total_blocking_time, &$max_fid, $DCL) {
   $TTI = null;
   $first_interactive = null;
+  $total_blocking_time = null;
+  $measurement_end = 0;
+
+  // See when the absolute last interaction measurement was
+  $last_interactive = 0;
+  foreach ($interactiveWindows as $window) {
+    if ($window[1] > $measurement_end) {
+      $measurement_end = max($window[1], $startTime);
+      $last_interactive = max($window[0], $startTime);
+    }
+  }
   
   // Start by filtering the interactive windows to only include 5 second windows that don't
   // end before the start time.
@@ -999,7 +1163,7 @@ function CalculateTimeToInteractive($localPaths, $startTime, $interactiveWindows
         $first_interactive = max($window[0], $startTime);
     }
   }
-  
+
   $rw = array();
   if (count($iw)) {
     // Find all of the request windows with 5 seconds of no more than 2 concurrent document requests
@@ -1020,7 +1184,7 @@ function CalculateTimeToInteractive($localPaths, $startTime, $interactiveWindows
           }
         }
       }
-      
+
       // Sort the events by time
       if (count($re)) {
         usort($re, function($a, $b) {return ($a['time'] > $b['time']) ? +1 : -1;});
@@ -1047,7 +1211,7 @@ function CalculateTimeToInteractive($localPaths, $startTime, $interactiveWindows
       }
     }
   }
-  
+
   // Find the first interactive window that also has at least a 5 second intersection with one of the request windows
   if (count($rw)) {
     $window = null;
@@ -1062,6 +1226,36 @@ function CalculateTimeToInteractive($localPaths, $startTime, $interactiveWindows
     }
     if (isset($window))
       $TTI = max($startTime, $window[0]);
+  }
+
+  // Calculate the total blocking time - https://web.dev/tbt/
+  // and the max possible FID (longest task)
+  $endTime = isset($TTI) ? $TTI : $last_interactive;
+  if (isset($long_tasks)) {
+    $total_blocking_time = 0;
+    $max_fid = 0;
+    if ($endTime > $startTime) {
+      foreach ($long_tasks as $task) {
+        $start = max($task[0], $startTime) + 50; // "blocking" time excludes the first 50ms
+        $end = min($task[1], $endTime);
+        $busyTime = $end - $start;
+        if ($busyTime > 0) {
+          $total_blocking_time += $busyTime;
+          if ($busyTime > $max_fid) {
+            $max_fid = $busyTime;
+          }
+        }
+      }
+    }
+  }
+
+  if (isset($DCL)) {
+    if (isset($TTI) && $TTI > 0 && $DCL > $TTI) {
+      $TTI = $DCL;
+    }
+    if (isset($first_interactive) && $first_interactive > 0 && $DCL > $first_interactive) {
+      $first_interactive = $DCL;
+    }
   }
   
   return $TTI;

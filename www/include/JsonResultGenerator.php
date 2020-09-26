@@ -9,6 +9,8 @@ class JsonResultGenerator {
   const WITHOUT_RUNS = 5;
   const WITHOUT_REQUESTS = 6;
   const WITHOUT_CONSOLE = 7;
+  const WITHOUT_LIGHTHOUSE = 8;
+  const WITHOUT_REPEAT_VIEW = 9;
 
   /* @var TestInfo */
   private $testInfo;
@@ -22,7 +24,7 @@ class JsonResultGenerator {
   /**
    * JsonResultGenerator constructor.
    * @param TestInfo $testInfo Information about the test
-   * @param string $urlStart Start for test related URLS
+   * @param string $urlStart Start for test-related URLS
    * @param FileHandler $fileHandler FileHandler to be used. Optional
    * @param array $infoFlags Array of WITHOUT_* and BASIC_* constants to define if some info should be left out. Optional
    * @param bool $friendlyUrls True if friendly urls should be used (mod_rewrite), false otherwise
@@ -87,6 +89,8 @@ class JsonResultGenerator {
         $ret['latency'] = $testInfo['latency'];
       if (array_key_exists('plr', $testInfo))
         $ret['plr'] = $testInfo['plr'];
+      if (array_key_exists('shaperLimit', $testInfo))
+        $ret['shaperLimit'] = $testInfo['shaperLimit'];
       if (array_key_exists('mobile', $testInfo))
         $ret['mobile'] = $testInfo['mobile'];
       if (array_key_exists('label', $testInfo) && strlen($testInfo['label']))
@@ -103,16 +107,16 @@ class JsonResultGenerator {
         $fvOnly = $testInfo['fvonly'] ? true : false;
     }
     $cachedMax = 0;
-    if (!$fvOnly)
+    if (!$fvOnly && !$this->hasInfoFlag(self::WITHOUT_REPEAT_VIEW))
       $cachedMax = 1;
-    $ret['runs'] = $runs;
+    $ret['testRuns'] = $runs;
     $ret['fvonly'] = $fvOnly;
     $ret['successfulFVRuns'] = $testResults->countSuccessfulRuns(false);
     if (!$fvOnly)
       $ret['successfulRVRuns'] = $testResults->countSuccessfulRuns(true);
-      
+
     // lighthouse
-    if (!$this->hasInfoFlag(self::BASIC_INFO_ONLY)) {
+    if (!$this->hasInfoFlag(self::BASIC_INFO_ONLY) && !$this->hasInfoFlag(self::WITHOUT_LIGHTHOUSE)) {
       $lighthouse = $testResults->getLighthouseResult();
       if (isset($lighthouse))
         $ret['lighthouse'] = $lighthouse;
@@ -253,7 +257,7 @@ class JsonResultGenerator {
       $ret['PageSpeedScore'] = $testStepResult->getPageSpeedScore();
       $ret['PageSpeedData'] = $urlGenerator->getGZip($nameOnlyPaths->pageSpeedFile());
     }
-    
+
     $ret['pages'] = array();
     $ret['pages']['details'] = $urlGenerator->resultPage("details");
     $ret['pages']['checklist'] = $urlGenerator->resultPage("performance_optimization");
@@ -270,9 +274,14 @@ class JsonResultGenerator {
     $ret['images']['waterfall'] = $friendlyUrlGenerator->generatedImage("waterfall");
     $ret['images']['connectionView'] = $friendlyUrlGenerator->generatedImage("connection");
     $ret['images']['checklist'] = $friendlyUrlGenerator->optimizationChecklistImage();
-    $ret['images']['screenShot'] = $urlGenerator->getFile($nameOnlyPaths->screenShotFile());
+    if ($this->fileHandler->fileExists($localPaths->screenShotFile())) {
+      $ret['images']['screenShot'] = $urlGenerator->getFile($nameOnlyPaths->screenShotFile());
+    }
     if ($this->fileHandler->fileExists($localPaths->screenShotPngFile())) {
       $ret['images']['screenShotPng'] = $urlGenerator->getFile($nameOnlyPaths->screenShotPngFile());
+      if (!isset($ret['images']['screenShot'])) {
+        $ret['images']['screenShot'] = $ret['images']['screenShotPng'];
+      }
     }
     if ($this->fileHandler->fileExists($localPaths->renderedVideoFile())) {
       $ret['video'] = $urlGenerator->getFile($nameOnlyPaths->renderedVideoFile());

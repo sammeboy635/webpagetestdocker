@@ -4,6 +4,9 @@ require_once('object_detail.inc');
 require_once('page_data.inc');
 require_once('waterfall.inc');
 
+// Prevent the details page from running out of control.
+set_time_limit(30);
+
 require_once __DIR__ . '/include/TestInfo.php';
 require_once __DIR__ . '/include/TestRunResults.php';
 require_once __DIR__ . '/include/RunResultHtmlTable.php';
@@ -19,13 +22,13 @@ $testRunResults = TestRunResults::fromFiles($testInfo, $run, $cached, null);
 $data = loadPageRunData($testPath, $run, $cached, $test['testinfo']);
 $isMultistep = $testRunResults->countSteps() > 1;
 
-$page_keywords = array('Performance Test','Details','Webpagetest','Website Speed Test','Page Speed');
+$page_keywords = array('Performance Test','Details','WebPageTest','Website Speed Test','Page Speed');
 $page_description = "Website performance test details$testLabel";
 ?>
 <!DOCTYPE html>
 <html>
     <head>
-        <title>WebPagetest Test Details<?php echo $testLabel; ?></title>
+        <title>WebPageTest Test Details<?php echo $testLabel; ?></title>
         <?php $gaTemplate = 'Details'; include ('head.inc'); ?>
         <style type="text/css">
         div.bar {
@@ -155,7 +158,7 @@ $page_description = "Website performance test details$testLabel";
                 {
                     require_once('google/google_lib.inc');
                 ?>
-                    <h2>Csi Metrics</h2>
+                    <h2>CSI Metrics</h2>
                             <table id="tableCustomMetrics" class="pretty" align="center" border="1" cellpadding="10" cellspacing="0">
                                <tr>
                             <?php
@@ -214,6 +217,7 @@ $page_description = "Website performance test details$testLabel";
                         echo "<td><a href='#request_headers_$stepSuffix'>Request Headers</a></td>";
                         echo "<td><a href='" . $urlGenerator->stepDetailPage("customWaterfall", "width=930") . "'>Customize Waterfall</a></td>";
                         echo "<td><a href='" . $urlGenerator->stepDetailPage("pageimages") . "'>All Images</a></td>";
+                        echo "<td><a href='" . $urlGenerator->stepDetailPage("http2_dependencies") . "'>HTTP/2 Dependency Graph</a></td>";
                         echo "</tr>";
                     }
                     echo "</table>\n<br>\n";
@@ -372,7 +376,9 @@ $page_description = "Website performance test details$testLabel";
             };
             var slide_opener = $("#request_headers_step" + stepNum);
             if (slide_opener.length) {
-              accordionHandler.toggleAccordion(slide_opener, true, expand);
+                <?php if ($isMultistep) { ?>
+                accordionHandler.toggleAccordion(slide_opener, true, expand);
+                <?php } ?>
             } else {
                 expand();
             }
@@ -383,7 +389,9 @@ $page_description = "Website performance test details$testLabel";
             if (!hash) {
                 var defaultAccordion = $("#waterfall_view_step1");
                 if (defaultAccordion.length) {
-                  accordionHandler.toggleAccordion(defaultAccordion);
+                    <?php if ($isMultistep) { ?>
+                    accordionHandler.toggleAccordion(defaultAccordion);
+                    <?php } ?>
                 }
                 return;
             }
@@ -391,7 +399,9 @@ $page_description = "Website performance test details$testLabel";
                 hash.startsWith("#connection_view_step") ||
                 hash.startsWith("#request_details_step") ||
                 hash.startsWith("#request_headers_step")) {
+              <?php if ($isMultistep) { ?>
               accordionHandler.handleHash();
+              <?php } ?>
             }
             handleRequestHash();
         }
@@ -415,4 +425,3 @@ $page_description = "Website performance test details$testLabel";
         </script>
     </body>
 </html>
-

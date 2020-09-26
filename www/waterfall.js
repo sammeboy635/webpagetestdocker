@@ -82,6 +82,7 @@ function SelectRequest(step, request) {
     var details='';
     var requestHeaders='';
     var responseHeaders='';
+    let json = '';
     $("#response-body-" + stepLabel).html('');
     try {
         if (wptBodyRequest !== undefined)
@@ -90,6 +91,7 @@ function SelectRequest(step, request) {
     }
     if (wptRequestData[stepLabel][request - 1] !== undefined) {
         var r = wptRequestData[stepLabel][request - 1];
+        json = JSON.stringify(r, null, 4);
         if (r['full_url'] !== undefined) {
             if (wptNoLinks) {
                 details += '<b>URL:</b> ' + htmlEncode(r['full_url']) + '<br>';
@@ -103,6 +105,8 @@ function SelectRequest(step, request) {
                 details += ':' + htmlEncode(r['initiator_line']);
             details += '<br>';
         }
+        if (r['documentURL'] !== undefined)
+            details += '<b>Document: </b>' + htmlEncode(r['documentURL']) + '<br>';
         if (r['host'] !== undefined)
             details += '<b>Host: </b>' + htmlEncode(r['host']) + '<br>';
         if (r['ip_addr'])
@@ -121,7 +125,7 @@ function SelectRequest(step, request) {
             details += ", weight " + htmlEncode(parseInt(r['http2_stream_weight']));
           if (r['http2_stream_dependency'] !== undefined)
             details += ", depends on " + htmlEncode(r['http2_stream_dependency']);
-          if (r['http2_stream_exclusive'] !== undefined && r['http2_stream_exclusive'] > 0)
+          if (r['http2_stream_exclusive'] !== undefined && (r['http2_stream_exclusive'] > 0 || r['http2_stream_exclusive'] === "True"))
             details += ", EXCLUSIVE";
           details += '<br>';
         }
@@ -131,6 +135,8 @@ function SelectRequest(step, request) {
             details += '<b>Request ID: </b>' + htmlEncode(r['request_id']) + '<br>';
         if (r['client_port'] !== undefined && r['client_port'] !== null && r['client_port'])
             details += '<b>Client Port: </b>' + htmlEncode(r['client_port']) + '<br>';
+        if (r['created'] !== undefined)
+            details += '<b>Discovered: </b>' + (r['created'] / 1000.0).toFixed(3) + ' s<br>';
         if (r['load_start'] !== undefined)
             details += '<b>Request Start: </b>' + (r['load_start'] / 1000.0).toFixed(3) + ' s<br>';
         if (IsValidDuration(r['dns_ms'])) {
@@ -227,6 +233,7 @@ function SelectRequest(step, request) {
     $("#request-details-" + stepLabel).html(details);
     $("#request-headers-" + stepLabel).html(requestHeaders);
     $("#response-headers-" + stepLabel).html(responseHeaders);
+    $("#request-raw-details-json-" + stepLabel).text(json);
     $('#request-dialog-' + stepLabel).jqmShow();
 
     // highlight the selected request

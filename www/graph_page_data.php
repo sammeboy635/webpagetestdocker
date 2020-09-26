@@ -1,4 +1,4 @@
-<?php 
+<?php
 // We intend to change to "?tests" but also allow "?test" so as to not break existing links.
 $tests = (isset($_REQUEST['tests'])) ? $_REQUEST['tests'] : $_REQUEST['test'];
 $tests = preg_replace('/[^a-zA-Z0-9,_\.\-:\ ]/', '', $tests);
@@ -85,7 +85,7 @@ $common_label = implode(" ", $common_labels);
 <!DOCTYPE html>
 <html>
     <head>
-        <title>WebPagetest - Graph Page Data</title>
+        <title>WebPageTest - Graph Page Data</title>
         <meta http-equiv="charset" content="iso-8859-1">
         <meta name="author" content="Patrick Meenan">
         <?php $gaTemplate = 'Graph'; include ('head.inc'); ?>
@@ -161,30 +161,31 @@ $common_label = implode(" ", $common_labels);
             }
             ?>
             <?php
-            $metrics = array('docTime' => 'Load Time (onload - ms)', 
+            $metrics = array('docTime' => 'Load Time (onload - ms)',
                             'loadEventStart' => 'Browser-reported Load Time (Navigation Timing onload)',
                             'domContentLoadedEventStart' => 'DOM Content Loaded (Navigation Timing)',
                             'SpeedIndex' => 'Speed Index',
-                            'TTFB' => 'Time to First Byte (ms)', 
+                            'TTFB' => 'Time to First Byte (ms)',
                             'basePageSSLTime' => 'Base Page SSL Time (ms)',
-                            'render' => 'Time to Start Render (ms)', 
+                            'render' => 'Time to Start Render (ms)',
                             'TimeToInteractive' => 'Time to Interactive (ms) - Beta',
                             'visualComplete' => 'Time to Visually Complete (ms)',
-                            'lastVisualChange' => 'Last Visual Change (ms)', 
+                            'lastVisualChange' => 'Last Visual Change (ms)',
                             'titleTime' => 'Time to Title (ms)',
-                            'fullyLoaded' => 'Fully Loaded (ms)', 
+                            'fullyLoaded' => 'Fully Loaded (ms)',
                             'server_rtt' => 'Estimated RTT to Server (ms)',
                             'docCPUms' => 'CPU Busy Time',
-                            'domElements' => 'Number of DOM Elements', 
-                            'connections' => 'Connections', 
-                            'requests' => 'Requests (Fully Loaded)', 
-                            'requestsDoc' => 'Requests (onload)', 
-                            'bytesInDoc' => 'Bytes In (onload)', 
-                            'bytesIn' => 'Bytes In (Fully Loaded)', 
+                            'domElements' => 'Number of DOM Elements',
+                            'connections' => 'Connections',
+                            'requests' => 'Requests (Fully Loaded)',
+                            'requestsDoc' => 'Requests (onload)',
+                            'bytesInDoc' => 'Bytes In (onload)',
+                            'bytesIn' => 'Bytes In (Fully Loaded)',
                             'browser_version' => 'Browser Version');
             $customMetrics = null;
             $csiMetrics = null;
             $userTimings = null;
+            $userMeasures = null;
             foreach ($pagesData as &$pageData) {
               foreach ($pageData as &$pageRun)
                 foreach ($pageRun as &$data) {
@@ -203,9 +204,14 @@ $common_label = implode(" ", $common_labels);
                       if (!isset($userTimings))
                         $userTimings = array();
                       $userTimings[$metric] = 'User Timing - ' . substr($metric, 9);
+                    } else if (substr($metric, 0, 18) == 'userTimingMeasure.') {
+                      if (!isset($userMeasures))
+                        $userMeasures = array();
+                      $userMeasures[$metric] = 'User Timing Measure - ' . substr($metric, 18);
                     }
                   }
                   $timingCount = count($userTimings);
+                  $measuresCount = count($userMeasures);
                   if (array_key_exists('CSI', $data) && is_array($data['CSI']) && count($data['CSI'])) {
                     if (!isset($csiMetrics))
                       $csiMetrics = array();
@@ -238,6 +244,12 @@ $common_label = implode(" ", $common_labels);
                 InsertChart($metric, $label);
               }
             }
+            if (isset($userMeasures) && is_array($userMeasures) && count($userMeasures)) {
+              echo '<h1 id="UserTimingMeasure"><a href="http://www.w3.org/TR/user-timing/#dom-performance-measure">W3C User Timing measures</a></h1>';
+              foreach($userMeasures as $metric => $label) {
+                InsertChart($metric, $label);
+              }
+            }
             if (isset($csiMetrics) && is_array($csiMetrics) && count($csiMetrics)) {
               echo '<h1 id="CSI">CSI Metrics</h1>';
               foreach($csiMetrics as $metric => $label) {
@@ -251,7 +263,12 @@ $common_label = implode(" ", $common_labels);
             <script type="text/javascript" src="//www.google.com/jsapi"></script>
             <script type="text/javascript">
                 <?php
-                    echo "var chartData = " . json_encode($chartData) . ";\n";
+                    $chartDataJson = json_encode($chartData);
+                    // If JSON encode fails due to inf and nan, replace those occurences with '0' in the serialized output then retry.
+                    if (json_last_error() == JSON_ERROR_INF_OR_NAN) {
+                      $chartDataJson = json_encode(unserialize(str_replace(array('NAN;', 'INF;'), '0;', serialize($chartData))));
+                    }
+                    echo "var chartData = " . $chartDataJson . ";\n";
                     echo "var runs = $num_runs;\n";
                 ?>
             <?php include('graph_page_data.js'); ?>
@@ -331,7 +348,7 @@ function InsertChart($metric, $label) {
     }
     echo '</table></div>';
   }
-  
+
   // For each view (first / repeat) that we want to show
   foreach ($views as $cached) {
     $statValues = array();

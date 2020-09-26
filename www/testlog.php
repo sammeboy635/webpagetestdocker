@@ -1,30 +1,39 @@
 <?php
 include 'common.inc';
-set_time_limit(0);
+if ($admin || $privateInstall) {
+    set_time_limit(0);
+} else {
+    set_time_limit(60);
+}
 
-if ($userIsBot || !empty($settings['disableTestlog'])) {
+if ($userIsBot || GetSetting('disableTestlog')) {
   header('HTTP/1.0 403 Forbidden');
   exit;
 }
 
-$page_keywords = array('Log','History','Webpagetest','Website Speed Test');
-$page_description = "History of website performance speed tests run on WebPagetest.";
+$page_keywords = array('Log','History','WebPageTest','Website Speed Test');
+$page_description = "History of website performance speed tests run on WebPageTest.";
 
 $supportsGrep = false;
 $out = exec('grep --version', $output, $result_code);
-if ($ret == 0 && isset($output) && is_array($output) && count($output))
+if ($result_code == 0 && isset($output) && is_array($output) && count($output))
   $supportsGrep = true;
 
 
 $days      = (int)$_GET["days"];
-$from      = $_GET["from"] ?: 'now';
+$from      = (isset($_GET["from"]) && strlen($_GET["from"])) ? $_GET["from"] : 'now';
 $filter    = $_GET["filter"];
-$filterstr = $filter ? preg_replace('/[^a-zA-Z0-9 \.\(\))\-\+]/', '', strtolower($filter)) : null;
+$filterstr = $filter ? preg_replace('/[^a-zA-Z0-9 \/\:\.\(\))\-\+]/', '', strtolower($filter)) : null;
 $onlyVideo = !empty($_REQUEST['video']);
 $all       = !empty($_REQUEST['all']);
-$repeat   = !empty($_REQUEST['repeat']);
+$repeat    = !empty($_REQUEST['repeat']);
 $nolimit   = !empty($_REQUEST['nolimit']);
-$csv       = !strcasecmp($_GET["f"], 'csv');
+$csv       = isset($_GET["f"]) && !strcasecmp($_GET["f"], 'csv');
+
+if ($all && $days > 7 && !strlen(trim($filterstr))) {
+  header('HTTP/1.0 403 Forbidden');
+  exit;
+}
 
 if (isset($this_user) && !isset($user))
   $user = $this_user;
@@ -32,7 +41,7 @@ if (isset($this_user) && !isset($user))
 if (isset($filterstr) && $supportsGrep)
   $filterstr = trim(escapeshellarg(str_replace(array('"', "'", '\\'), '', trim($filterstr))), "'\"");
 
-if(extension_loaded('newrelic')) { 
+if(extension_loaded('newrelic')) {
   newrelic_add_custom_parameter('filter', $filter);
   newrelic_add_custom_parameter('days', $days);
   newrelic_add_custom_parameter('all', $all);
@@ -42,8 +51,8 @@ if(extension_loaded('newrelic')) {
 $includeip      = false;
 $includePrivate = false;
 if ($admin) {
-    $includeip = (int)$_GET["ip"] == 1;
-    $includePrivate = (int)$_GET["private"] == 1;
+    $includeip = isset($_GET["ip"]) && (int)$_GET["ip"] == 1;
+    $includePrivate = isset($_GET["private"]) && (int)$_GET["private"] == 1;
 }
 
 function check_it($val) {
@@ -63,7 +72,7 @@ else
 <!DOCTYPE html>
 <html>
     <head>
-        <title>WebPagetest - Test Log</title>
+        <title>WebPageTest - Test Log</title>
         <?php $gaTemplate = 'Test Log'; include ('head.inc'); ?>
         <style type="text/css">
             h4 {text-align: center;}
@@ -94,19 +103,19 @@ else
                          <input id="filter" name="filter" type="text" style="width:30em" value="<?php echo htmlspecialchars($filter); ?>">
                          <input id="SubmitBtn" type="submit" value="Update List"><br>
                          <?php
-                         if( isset($uid) || (isset($owner) && strlen($owner)) ) { ?>
+                         if( ($admin || !GetSetting('forcePrivate')) && (isset($uid) || (isset($owner) && strlen($owner))) ) { ?>
                              <label><input id="all" type="checkbox" name="all" <?php check_it($all);?> onclick="this.form.submit();"> Show tests from all users</label> &nbsp;&nbsp;
                              <?php
                          }
                          if ($includePrivate)
                            echo '<input id="private" type="hidden" name="private" value="1">';
                          ?>
-                        <label><input id="video" type="checkbox" name="video" <?php check_it($onlyVideo);?> onclick="this.form.submit();"> Only list tests that include video</label> &nbsp;&nbsp;
+                        <label><input id="video" type="checkbox" name="video" <?php check_it($onlyVideo);?> onclick="this.form.submit();"> Only list tests which include video</label> &nbsp;&nbsp;
                         <label><input id="repeat" type="checkbox" name="repeat" <?php check_it($repeat);?> onclick="this.form.submit();"> Show repeat view</label>
-                        <label><input id="nolimit" type="checkbox" name="nolimit" <?php check_it($nolimit);?> onclick="this.form.submit();"> Do not limit the number of results (warning, WILL be slow)</label>
+                        <label><input id="nolimit" type="checkbox" name="nolimit" <?php check_it($nolimit);?> onclick="this.form.submit();"> Do not limit the number of results (warning: WILL be slow)</label>
 
                 </form>
-                <h4>Clicking on an url will bring you to the results for that test</h4>
+                <h4>Clicking on an URL will bring you to that test's results</h4>
                 <form name="compare" method="get" action="/video/compare.php">
                 <table class="history" border="0" cellpadding="5px" cellspacing="0">
                     <tr>
@@ -122,7 +131,7 @@ else
                         }
                         ?>
                         <th>Label</th>
-                        <th>Url</th>
+                        <th>URL</th>
                     </tr>
                     <?php
     }  // if( $csv )
@@ -156,9 +165,9 @@ else
                               $command = "grep -a -i -F";
                               foreach($patterns as $pattern) {
                                 $pattern = str_replace('"', '\\"', $pattern);
-                                $command .= " -e \"$pattern\"";
+                                $command .= " -e " . escapeshellarg($pattern);
                               }
-                              $command .= " \"$fileName\"";
+                              $command .= " '$fileName'";
                               exec($command, $lines, $result_code);
                               if ($result_code === 0 && is_array($lines) && count($lines))
                                 $ok = true;
@@ -202,9 +211,9 @@ else
                                       $testUID    = @$line_data['testUID'];
                                       $testUser   = @$line_data['testUser'];
                                       $video      = @$line_data['video'];
-                                      $label      = htmlentities(@$line_data['label']);
-                                      $o          = @$line_data['o'];
-                                      $key        = @$line_data['key'];
+                                      $label      = isset($line_data['label']) ? htmlentities($line_data['label']) : '';
+                                      $o          = isset($line_data['o']) ? $line_data['o'] : NULL;
+                                      $key        = isset($line_data['key']) ? $line_data['key'] : NULL;
                                       $count      = @$line_data['count'];
 
                                       if (!$location) {
@@ -222,7 +231,7 @@ else
                                               }
                                             }
                                           }
-                                          
+
                                           // see if it is supposed to be filtered out
                                           if ($private) {
                                               $ok = false;
@@ -283,7 +292,7 @@ else
                                                       echo "<input type=\"checkbox\" name=\"t[]\" value=\"$guid\" title=\"First View\">";
                                                       if($repeat) {
                                                           echo "<input type=\"checkbox\" name=\"t[]\" value=\"$guid-c:1\" title=\"Repeat View\">";
-                                                      } 
+                                                      }
                                                   }
                                                   echo '</td>';
                                                   echo '<td class="date">';

@@ -71,12 +71,20 @@ foreach($compTests as $t) {
                     $test['done'] = true;
                     $testInfoObject = TestInfo::fromFiles("./" . $test['path']);
 
+                    $stepResult = null;
                     if( !array_key_exists('run', $test) || !$test['run'] ) {
+                      try{
                         $testResults = TestResults::fromFiles($testInfoObject);
                         $test['run'] = $testResults->getMedianRunNumber($test_median_metric, $test['cached']);
                         $runResults = $testResults->getRunResult($test['run'], $test['cached']);
-                        $stepResult = $runResults->getStepResult($test['step']);
-                    } else {
+                        if (isset($runResults)) {
+                          $stepResult = $runResults->getStepResult($test['step']);
+                        }
+                      } catch(Exception $e) {
+                      }
+                    }
+
+                    if (!isset($stepResult)) {
                         $stepResult = TestStepResult::fromFiles($testInfoObject, $test['run'], $test['cached'], $test['step']);
                     }
                     $test['stepResult'] = $stepResult;
@@ -188,7 +196,7 @@ function LoadTestData() {
       if (strlen($url))
         $test['url'] = $url;
     }
-    
+
     // Round the end time up based on the selected interval
     if (isset($test['end']))
       $test['end'] = ceil($test['end'] / $interval) * $interval;
@@ -201,7 +209,7 @@ function LoadTestData() {
         $test['name'] = trim($testInfo['label']);
     }
 
-    // See if we have an overridden test label in the sqlite DB
+    // See if we have an overridden test label in the SQLite DB
     $new_label = getLabel($test['id'], $user);
     if (!empty($new_label))
       $test['name'] = $new_label;
@@ -228,7 +236,7 @@ function LoadTestData() {
         foreach($test['video']['progress']['frames'] as $ms => $frame) {
           if (!$supports60fps && is_array($frame) && array_key_exists('file', $frame) && substr($frame['file'], 0, 3) == 'ms_')
             $supports60fps = true;
-            
+
           if ((!$test['end'] || $test['end'] == -1 || $ms <= $test['end']) &&
               (!isset($test['initial']) || !count($test['video']['frames']) || $ms >= $test['initial']) ) {
             $path = "$videoPath/{$frame['file']}";
