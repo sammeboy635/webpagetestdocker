@@ -1,0 +1,16 @@
+---
+version: '3'
+
+services:
+  wpt-web:
+    image: wpt-nginx:dc50785d72ee6d5e956207e4a4cbf4e8c8da755d
+    ports:
+      - "80:80"
+    links:
+      - wpt-php
+
+  wpt-php:
+    image: wpt-php:dc50785d72ee6d5e956207e4a4cbf4e8c8da755d
+
+networks:
+  default:
