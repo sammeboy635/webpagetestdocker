@@ -1,12 +1,13 @@
 FROM php:7.4-apache
 MAINTAINER iteratec WPT Team <wpt@iteratec.de>
 
-RUN chmod o+r /etc/resolv.conf
+#RUN chmod o+r /etc/resolv.conf
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -q -y --allow-unauthenticated \
     imagemagick \
     libjpeg-progs \
+    libzip-dev \
     exiftool \
     unzip \
     wget \
@@ -25,7 +26,7 @@ RUN apt-get update && \
     apt-get clean && \
     apt-get autoclean
 
-RUN apt-get install libzip-dev -y
+#RUN apt-get install libzip-dev -y
 
 RUN docker-php-ext-configure gd --with-freetype=/usr/include/ --with-jpeg=/usr/include/ && \
     docker-php-ext-install gd && \
@@ -82,3 +83,4 @@ VOLUME /var/www/html/logs
 EXPOSE 80 443
 
 CMD ["/usr/bin/supervisord"]
+
