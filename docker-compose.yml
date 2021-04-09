@@ -1,16 +1,26 @@
 ---
-version: '3'
+version: '3.6'
 
 services:
   wpt-web:
-    image: wpt-nginx:dc50785d72ee6d5e956207e4a4cbf4e8c8da755d
+    image: wpt-nginx:21d1d30b
     ports:
       - "80:80"
     links:
       - wpt-php
 
   wpt-php:
-    image: wpt-php:dc50785d72ee6d5e956207e4a4cbf4e8c8da755d
+    image: wpt-php:21d1d30b
+
+  agent:
+    image: docker:20.10
+    command: 'sh -c "exec docker run --rm --cap-add=NET_ADMIN --shm-size=1g --log-driver none baqend/webpagetest-agent:2021-04-08 -v -v -v --server http://wpt-web/work/ --location eu-central-1-docker --key 1234567890123456789012345678901234567890 --exit 60"'
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+    links:
+      - wpt-php
 
 networks:
   default:
