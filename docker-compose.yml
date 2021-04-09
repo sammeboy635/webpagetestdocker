@@ -1,18 +1,34 @@
 ---
 version: '3.6'
 
+# x-services-volume:
+#   &services-volume
+#   type: bind
+#   source: ./www
+#   target: /var/www/webpagetest
+
 services:
   wpt-web:
-    image: wpt-nginx:54efc565
+    image: wpt-nginx:4cae566a
     ports:
       - "80:80"
+    # volumes:
+    #   - *services-volume
 
   wpt-php:
-    image: wpt-php:54efc565
+    image: wpt-php:4cae566a
+    # volumes:
+    #   - *services-volume
 
   agent:
-    image: docker:20.10
-    command: 'sh -c "exec docker run --rm --cap-add=NET_ADMIN --shm-size=1g --log-driver none baqend/webpagetest-agent:2021-04-08 -v -v -v --server http://wpt-web/work/ --location us-east-1-docker --key 1234567890123456789012345678901234567890 --exit 60"'
+    image: baqend/webpagetest-agent:2021-04-08
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - SERVER_URL=http://wpt-web/work/
+      - LOCATION=us-east-1-docker
+      - KEY=1234567890123456789012345678901234567890
+    command: '--exit 60'
     volumes:
       - type: bind
         source: /var/run/docker.sock
@@ -20,3 +36,7 @@ services:
 
 networks:
   default:
+
+
+#    command: 'sh -c "exec docker run --rm --cap-add=NET_ADMIN --shm-size=1g --log-driver none baqend/webpagetest-agent:2021-04-08
+#     -v -v -v --server http://wpt-web/work/ --location us-east-1-docker --key 1234567890123456789012345678901234567890 --exit 60"'
