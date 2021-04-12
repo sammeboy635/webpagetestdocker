@@ -1,16 +1,18 @@
-VERSION      = $(shell git describe --tags --always --dirty)
-DOCKER_TAG   = $(shell git log -1 --format=%h)
-DOCKER_IMAGE =
+DOCKER_TAG   = $(shell date +%Y-%m-%d)
 
-default: all
+default: build-all
 
 php:
-	docker build --rm -t "wpt-php:$(DOCKER_TAG)" -f Dockerfile-php .
+	docker build --squash --rm -t "baqend/webpagetest-php:$(DOCKER_TAG)" -f Dockerfile-php .
 
 nginx:
-	docker build  --squash --rm -t "wpt-nginx:$(DOCKER_TAG)" -f Dockerfile-nginx .
+	docker build --squash --rm -t "baqend/webpagetest-nginx:$(DOCKER_TAG)" -f Dockerfile-nginx .
 
 apache:
-	docker build  --squash --rm -t "wpt-apache:$(DOCKER_TAG)" -f Dockerfile .
+	docker build --squash --rm -t "wpt-apache:$(DOCKER_TAG)" -f Dockerfile .
 
-all: php nginx
+push:
+	docker push baqend/webpagetest-php:$(DOCKER_TAG)
+	docker push baqend/webpagetest-nginx:$(DOCKER_TAG)
+
+build-all: php nginx
