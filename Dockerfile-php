@@ -127,7 +127,7 @@ COPY docker/server/config/periodic/hourly/wpt_cron_call.sh /etc/periodic/hourly/
 RUN chmod 755 /scripts/* \
     && chown -R nobody.nobody /run \
     && mkdir -p /var/www/webpagetest/results \
-    && chown -R nobody.nobody
+    && chown -R nobody.nobody /var/www/webpagetest/results
 
 USER nobody
 WORKDIR /var/www/webpagetest
