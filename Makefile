@@ -9,7 +9,7 @@ alpine-nginx:
 	docker build --rm -t "baqend/webpagetest-nginx:$(DOCKER_TAG)" -f Dockerfile-nginx .
 
 apache:
-	docker build --rm -t "webpagetest-server:$(DOCKER_TAG)" -f Dockerfile .
+	docker build --rm -t "baqend/webpagetest-server:$(DOCKER_TAG)" -f Dockerfile .
 
 alpine-push:
 	docker push baqend/webpagetest-php:$(DOCKER_TAG)
