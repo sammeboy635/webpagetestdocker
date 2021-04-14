@@ -57,6 +57,8 @@ RUN chown -R www-data:www-data /var/www/html && \
     mkdir -p /scripts
 
 COPY docker/server/config/locations.ini /var/www/html/settings/locations.ini
+COPY docker/server/config/connectivity.ini /var/www/html/settings/connectivity.ini
+COPY docker/server/config/settings.ini /var/www/html/settings/settings.ini
 COPY docker/server/config/php.ini /usr/local/etc/php/
 
 RUN pear config-set php_ini /usr/local/etc/php/php.ini
