@@ -1,6 +1,6 @@
 DOCKER_TAG   = $(shell date +%Y-%m-%d)
 
-default: build-all
+default: build-alpine
 
 alpine-php:
 	docker build --rm -t "baqend/webpagetest-php:$(DOCKER_TAG)" -f Dockerfile-php .
@@ -18,5 +18,5 @@ alpine-push:
 apache-push:
 	docker push baqend/webpagetest-server:$(DOCKER_TAG)
 
-build-alpine: php-alpine nginx-alpine alpine-push
-build-apache: apache apache-push
+build-alpine: alpine-php alpine-nginx 
+build-apache: apache 
