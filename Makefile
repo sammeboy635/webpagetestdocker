@@ -18,5 +18,5 @@ alpine-push:
 apache-push:
 	docker push baqend/webpagetest-server:$(DOCKER_TAG)
 
-build-alpine: alpine-php alpine-nginx 
-build-apache: apache 
+build-alpine: alpine-php alpine-nginx alpine-push
+build-apache: apache
