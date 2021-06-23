@@ -13,6 +13,8 @@ COPY --chown=nginx www/ /var/www/webpagetest
 COPY docker/server/config/locations.ini /var/www/webpagetest/settings/locations.ini
 COPY docker/server/config/connectivity.ini /var/www/webpagetest/settings/connectivity.ini
 COPY docker/server/config/settings.ini /var/www/webpagetest/settings/settings.ini
+COPY docker/server/config/mobile_devices.ini /var/www/webpagetest/settings/mobile_devices.ini
+
 RUN chown -R nginx /var/www/webpagetest/settings/
 
 
