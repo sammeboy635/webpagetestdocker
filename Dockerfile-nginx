@@ -21,4 +21,4 @@ RUN chown -R nginx /var/www/webpagetest/settings/
 USER nginx
 EXPOSE 80
 #CMD ["/bin/sh",  "-c",  "envsubst < /var/www/webpagetest/settings/settings.tpl > /var/www/webpagetest/settings/settings.ini && exec nginx -g 'daemon off;'"]
-CMD ["nginx -g 'daemon off;'"]
+CMD ["nginx", "-g", "daemon off;"]
