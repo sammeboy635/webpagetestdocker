@@ -19,6 +19,14 @@ services:
       placement:
         constraints:
           - 'node.labels.master == true'
+    environment:
+     - LOCATION_KEY=${LOCATION_KEY}
+     - ARCHIVE_S3_SERVER=${ARCHIVE_S3_SERVER}
+     - ARCHIVE_S3_KEY=${ARCHIVE_S3_KEY}
+     - ARCHIVE_S3_SECRET=${ARCHIVE_S3_SECRET}
+     - ARCHIVE_S3_BUCKET=${ARCHIVE_S3_BUCKET}
+     - EC2_KEY=${EC2_KEY}
+     - EC2_SECRET=${EC2_SECRET}
 
   php:
     build:
@@ -33,27 +41,27 @@ services:
         constraints:
           - 'node.labels.master == true'
 
-  agent:
-    image: docker:20.10
-    command: 'sh -c "exec docker run --rm --cap-add=NET_ADMIN --shm-size=1g --log-driver none baqend/webpagetest-agent:${AGENT_TAG} --server http://wpt.baqend.com/work/ --location ${LOCATION}-docker --key $$(cat /run/secrets/wpt-key) --exit 60"'
-    secrets:
-      - wpt-key
-    volumes:
-      - type: bind
-        source: /var/run/docker.sock
-        target: /var/run/docker.sock
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5M"
-        max-file: "3"
-    deploy:
-      mode: global
-      placement:
-        constraints:
-          - 'node.labels.location == ${LOCATION}'
-          - 'node.labels.master != true'
-          - 'node.labels.prewarmer != true'
+  # agent:
+  #   image: docker:20.10
+  #   command: 'sh -c "exec docker run --rm --cap-add=NET_ADMIN --shm-size=1g --log-driver none baqend/webpagetest-agent:${AGENT_TAG} --server http://wpt.baqend.com/work/ --location ${LOCATION}-docker --key $$(cat /run/secrets/wpt-key) --exit 60"'
+  #   secrets:
+  #     - wpt-key
+  #   volumes:
+  #     - type: bind
+  #       source: /var/run/docker.sock
+  #       target: /var/run/docker.sock
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "5M"
+  #       max-file: "3"
+  #   deploy:
+  #     mode: global
+  #     placement:
+  #       constraints:
+  #         - 'node.labels.location == ${LOCATION}'
+  #         - 'node.labels.master != true'
+  #         - 'node.labels.prewarmer != true'
 
 networks:
   default:
