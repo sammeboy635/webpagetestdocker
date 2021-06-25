@@ -1,73 +1,50 @@
 ---
 version: '3.6'
 
-# WEB_TAG=2021-04-13 PHP_TAG=2021-04-13 AGENT_TAG=2021-04-13 LOCATION=eu-central-1 docker stack deploy
-
 services:
 
   web:
     build:
       context: ./
       dockerfile: Dockerfile-ngix
-    image: baqend/webpagetest-nginx:${WEB_TAG}
+    image: baqend/webpagetest-nginx:2021-06-24
     ports:
-      - "80:80"
+      - "80:8080"
     volumes:
-      - wpt-results:/var/www/webpagetest/results
+      - /var/www/webpagetest/www/results:/var/www/webpagetest/results:ro
     deploy:
       replicas: 1
       placement:
         constraints:
           - 'node.labels.master == true'
-    environment:
-     - LOCATION_KEY=${LOCATION_KEY}
-     - ARCHIVE_S3_SERVER=${ARCHIVE_S3_SERVER}
-     - ARCHIVE_S3_KEY=${ARCHIVE_S3_KEY}
-     - ARCHIVE_S3_SECRET=${ARCHIVE_S3_SECRET}
-     - ARCHIVE_S3_BUCKET=${ARCHIVE_S3_BUCKET}
-     - EC2_KEY=${EC2_KEY}
-     - EC2_SECRET=${EC2_SECRET}
 
   php:
     build:
       context: ./
       dockerfile: Dockerfile-php
-    image: baqend/webpagetest-php:${PHP_TAG}
+    image: baqend/webpagetest-php:2021-06-24
     volumes:
-      - wpt-results:/var/www/webpagetest/results
+      - /var/www/webpagetest/www/results:/var/www/webpagetest/results
     deploy:
       replicas: 1
       placement:
         constraints:
           - 'node.labels.master == true'
-
-  # agent:
-  #   image: docker:20.10
-  #   command: 'sh -c "exec docker run --rm --cap-add=NET_ADMIN --shm-size=1g --log-driver none baqend/webpagetest-agent:${AGENT_TAG} --server http://wpt.baqend.com/work/ --location ${LOCATION}-docker --key $$(cat /run/secrets/wpt-key) --exit 60"'
-  #   secrets:
-  #     - wpt-key
-  #   volumes:
-  #     - type: bind
-  #       source: /var/run/docker.sock
-  #       target: /var/run/docker.sock
-  #   logging:
-  #     driver: "json-file"
-  #     options:
-  #       max-size: "5M"
-  #       max-file: "3"
-  #   deploy:
-  #     mode: global
-  #     placement:
-  #       constraints:
-  #         - 'node.labels.location == ${LOCATION}'
-  #         - 'node.labels.master != true'
-  #         - 'node.labels.prewarmer != true'
+    secrets:
+      - source: wpt_settings_ini
+        target: /var/www/webpagetest/settings/settings.ini
+      - source: wpt_keys_ini
+        target: /var/www/webpagetest/settings/keys.ini
 
 networks:
   default:
 
 secrets:
   wpt-key:
+    external: true
+  wpt_settings_ini:
+    external: true
+  wpt_keys_ini:
     external: true
 
 volumes:
