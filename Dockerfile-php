@@ -1,0 +1,135 @@
+FROM alpine:3.13 as build
+
+ARG FFMPEG_VERSION=4.3.2
+ARG PREFIX=/opt/ffmpeg
+ARG LD_LIBRARY_PATH=/opt/ffmpeg/lib
+ARG MAKEFLAGS="-j4"
+
+RUN apk add --no-cache --update \
+    build-base \
+    coreutils \
+    freetype-dev \
+    gcc \
+    lame-dev \
+    libogg-dev \
+    libass \
+    libass-dev \
+    libvpx-dev \
+    libvorbis-dev \
+    libwebp-dev \
+    libtheora-dev \
+    opus-dev \
+    openssl \
+    openssl-dev \
+    pkgconf \
+    pkgconfig \
+    rtmpdump-dev \
+    wget \
+    x264-dev \
+    x265-dev \
+    yasm
+
+RUN echo http://dl-cdn.alpinelinux.org/alpine/edge/community >> /etc/apk/repositories \
+    && echo http://dl-cdn.alpinelinux.org/alpine/edge/testing >> /etc/apk/repositories \
+    && apk add --no-cache --update fdk-aac-dev rav1e-dev
+
+WORKDIR /tmp/
+RUN wget --progress=dot:giga http://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.gz \
+    && tar zxf ffmpeg-${FFMPEG_VERSION}.tar.gz && rm ffmpeg-${FFMPEG_VERSION}.tar.gz
+
+# Compile ffmpeg.
+WORKDIR /tmp/ffmpeg-${FFMPEG_VERSION}
+RUN ./configure \
+    --enable-version3 \
+    --enable-gpl \
+    --enable-nonfree \
+    --enable-small \
+    --enable-libmp3lame \
+    --enable-libx264 \
+    --enable-libx265 \
+    --enable-libvpx \
+    --enable-libtheora \
+    --enable-libvorbis \
+    --enable-libopus \
+    --enable-libfdk-aac \
+    --enable-libass \
+    --enable-libwebp \
+    --enable-librtmp \
+    --enable-librav1e \
+    --enable-postproc \
+    --enable-avresample \
+    --enable-libfreetype \
+    --enable-filter=scale \
+    --enable-filter=decimate \
+    --enable-openssl \
+    --disable-debug \
+    --disable-doc \
+    --disable-ffplay \
+    --extra-cflags="-I${PREFIX}/include" \
+    --extra-ldflags="-L${PREFIX}/lib" \
+    --extra-libs="-lpthread -lm" \
+    --prefix="${PREFIX}" \
+    && make \
+    && make install \
+    && make distclean
+
+# Cleanup.
+RUN rm -rf /var/cache/apk/* /tmp/*
+
+FROM php:7.4-fpm-alpine
+LABEL maintainer="Wolfgang Schiffels<wolfgang.schiffels@baqend.com>"
+ENV PATH=/opt/ffmpeg/bin:$PATH
+ENV PYTHONUNBUFFERED=1
+
+RUN apk add --no-cache supervisor beanstalkd zip libzip python2 libtheora rtmpdump x264-dev x265-dev \
+    libpng libjpeg imagemagick imagemagick-libs imagemagick-dev libass librtmp libvpx libwebp lame pcre \
+    libogg libvorbis exiftool libjpeg-turbo-utils freetype zlib x264-libs x265 libzip opus \
+    && apk add --no-cache --virtual .build-deps zlib-dev libpng-dev jpeg-dev freetype-dev \
+    libzip-dev curl-dev autoconf gcc libc-dev make \
+    && python -m ensurepip \
+    && pip2 install ffmpeg \
+    && mkdir -p /var/www/ \
+    && mkdir -p /scripts \
+    && docker-php-ext-configure gd --with-freetype=/usr/include/ --with-jpeg=/usr/include/ \
+    && docker-php-ext-install gd \
+    && docker-php-ext-configure zip \
+    && docker-php-ext-install zip \
+    && docker-php-ext-install curl \
+    && printf "\n" | pecl install imagick \
+    && printf "\n" | pecl install apcu \
+    && docker-php-ext-enable imagick \
+    && apk del --no-cache .build-deps \
+    && rm -rf /var/cache/apk/*
+
+COPY --from=build /opt/ffmpeg /opt/ffmpeg
+COPY --from=build /usr/lib/libfdk-aac.so.2 /usr/lib/libfdk-aac.so.2
+COPY --from=build /usr/lib/librav1e.so /usr/lib/librav1e.so
+
+COPY docker/server/config/fpm-pool.conf /etc/php7/php-fpm.d/www.conf
+COPY docker/server/config/php.ini /usr/local/etc/php/
+
+COPY docker/server/config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY docker/server/config/supervisord/supervisord_php-fpm.conf /etc/supervisor/conf.d/supervisord_php-fpm.conf
+COPY docker/server/config/supervisord/supervisord_beanstalkd.conf /etc/supervisor/conf.d/supervisord_beanstalkd.conf
+COPY docker/server/config/supervisord/supervisord_ec2init.conf /etc/supervisor/conf.d/supervisord_ec2init.conf
+
+COPY --chown=nobody www/ /var/www/webpagetest
+COPY docker/server/config/locations.ini /var/www/webpagetest/settings/locations.ini
+COPY docker/server/config/connectivity.ini /var/www/webpagetest/settings/connectivity.ini
+#COPY docker/server/config/settings.ini /var/www/webpagetest/settings/settings.ini
+
+RUN chown -R nobody /var/www/webpagetest/settings/
+COPY docker/server/scripts/ /scripts/
+
+COPY docker/server/config/periodic/15min/wpt_cron_call.sh /etc/periodic/15min/
+COPY docker/server/config/periodic/hourly/wpt_cron_call.sh /etc/periodic/hourly/
+
+RUN chmod 755 /scripts/* \
+    && chown -R nobody.nobody /run \
+    && mkdir -p /var/www/webpagetest/results \
+    && chown -R nobody.nobody /var/www/webpagetest/results
+
+USER nobody
+WORKDIR /var/www/webpagetest
+EXPOSE 9000
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
