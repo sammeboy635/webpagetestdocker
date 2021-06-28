@@ -7,7 +7,7 @@ services:
     build:
       context: ./
       dockerfile: Dockerfile-ngix
-    image: baqend/webpagetest-nginx:2021-06-24
+    image: baqend/webpagetest-nginx:2021-06-28
     ports:
       - "80:8080"
     volumes:
@@ -22,7 +22,7 @@ services:
     build:
       context: ./
       dockerfile: Dockerfile-php
-    image: baqend/webpagetest-php:2021-06-24
+    image: baqend/webpagetest-php:2021-06-28
     volumes:
       - /var/www/webpagetest/www/results:/var/www/webpagetest/results
     deploy:
