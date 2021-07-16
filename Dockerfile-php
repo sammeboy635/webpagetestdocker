@@ -1,7 +1,7 @@
 FROM php:7.4-fpm-alpine
 LABEL maintainer="Wolfgang Schiffels<wolfgang.schiffels@baqend.com>"
 
-RUN apk add --no-cache supervisor beanstalkd imagemagick imagemagick-libs zip libzip \
+RUN apk add --no-cache supervisor beanstalkd imagemagick imagemagick-libs zip libzip libgomp \
     && mkdir -p /var/www/ \
     && mkdir -p /scripts
 
