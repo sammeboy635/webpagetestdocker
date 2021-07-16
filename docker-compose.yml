@@ -3,11 +3,11 @@ version: '3.6'
 
 services:
 
-  web:
+  wpt-web:
     build:
       context: ./
       dockerfile: Dockerfile-ngix
-    image: baqend/webpagetest-nginx:2021-06-24
+    image: baqend/webpagetest-nginx:upgrade
     ports:
       - "80:8080"
     volumes:
@@ -18,11 +18,11 @@ services:
         constraints:
           - 'node.labels.master == true'
 
-  php:
+  wpt-php:
     build:
       context: ./
       dockerfile: Dockerfile-php
-    image: baqend/webpagetest-php:2021-06-24
+    image: baqend/webpagetest-php:upgrade
     volumes:
       - /var/www/webpagetest/www/results:/var/www/webpagetest/results
     deploy:
