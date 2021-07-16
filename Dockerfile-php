@@ -85,7 +85,7 @@ RUN apk add --no-cache supervisor beanstalkd zip libzip python2 libtheora rtmpdu
     libpng libjpeg imagemagick imagemagick-libs imagemagick-dev libass librtmp libvpx libwebp lame pcre \
     libogg libvorbis exiftool libjpeg-turbo-utils freetype zlib x264-libs x265 libzip opus \
     && apk add --no-cache --virtual .build-deps zlib-dev libpng-dev jpeg-dev freetype-dev \
-    libzip-dev curl-dev autoconf gcc libc-dev make libgomp\
+    libzip-dev curl-dev autoconf gcc libc-dev make libgomp libgomp-dev\
     && python -m ensurepip \
     && pip2 install ffmpeg \
     && mkdir -p /var/www/ \
