@@ -1,6 +1,6 @@
 server {
-        listen 80 default_server;
-        listen [::]:80 default_server ipv6only=on;
+        listen 81 default_server;
+        listen [::]:81 default_server ipv6only=on;
 
         root   /var/www/webpagetest/;
         add_header Timing-Allow-Origin *;
