@@ -1,7 +1,4 @@
 <?php
-// Copyright 2020 Catchpoint Systems Inc.
-// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
-// found in the LICENSE.md file.
 require_once(__DIR__ . '/testStatus.inc');
 require_once(__DIR__ . '/logging.inc');
 require_once(__DIR__ . '/common_lib.inc');
@@ -15,29 +12,12 @@ function ArchiveSkipFile($file) {
   $skip = false;
   if ($file == 'archive.me' ||
       $file == 'test.waiting' ||
-      $file == 'test.running' ||
       preg_match('/\.pageData.\d+\.gz$/', $file) ||
       preg_match('/\.requests.\d+\.gz$/', $file) ||
       preg_match('/\.devToolsCPUTime.\d+\.gz$/', $file)) {
     $skip = true;
   }
   return $skip;
-}
-
-function ArchiveFilterLargeFile($file) {
-    $files = array(
-        '.cap.gz',
-        '_trace.json.gz',
-        'bodies.zip',
-        'console_log.json.gz',
-        'netlog.txt.gz'
-    );
-    foreach ($files as $f) {
-        if (strstr($file, $f) !== false) {
-            return true;
-        }
-    }
-    return false;
 }
 
 /**
@@ -47,39 +27,19 @@ function ArchiveFilterLargeFile($file) {
 *
 * @param mixed $id
 */
-function ArchiveTest($id, $delete = false) {
+function ArchiveTest($id, $store_result = true, $delete = false) {
+    global $settings;
     global $api_keys;
-
-    // Short-circuit tests that are already archived
-    $testPath = realpath('./' . GetTestPath($id));
-    if (is_file("$testPath/.archived")) {
-        if ($delete && is_dir($testPath)) {
-            delTree("$testPath/");
-        }
-        return true;
-    }
-
-    // Get the capture server settings if configured and the test ID specifies a capture server
-    $capture_server = null;
-    $capture_salt = null;
-    if (preg_match('/^\d+[^_+][_ix]([^c_])+c/', $id, $matches)) {
-        $capture_prefix = $matches[1];
-        if ($capture_prefix) {
-            $capture_server = GetSetting("cp_capture_$capture_prefix");
-            $capture_salt = GetSetting("cp_capture_salt_$capture_prefix");
-        }
-    }
-
     $ret = false;
     if ( strpos($id, '.') === false &&                           // make sure it isn't a relay test
-        ($capture_server ||                                     // CP Capture server
-        GetSetting('archive_dir') ||           // local mount
-        GetSetting('archive_url') ||           // Archive server (simple PUT, HEAD, GET)
-        GetSetting('archive_s3_server')) ) {    // S3 Interface (Internet Archive or standard)
+        (array_key_exists('archive_dir', $settings) ||           // local mount
+        array_key_exists('archive_url', $settings) ||           // Archive server (simple PUT, HEAD, GET)
+        array_key_exists('archive_s3_server', $settings)) ) {    // S3 Interface (Internet Archive or standard)
         $status = GetTestStatus($id, false);
         $completed = true;
         if ($status['statusCode'] >= 100 && $status['statusCode'] < 200)
             $completed = false;
+        $testPath = realpath('./' . GetTestPath($id));
         $testInfo = GetTestInfo($id);
         if ($testInfo && ($completed || @$testInfo['batch'])) {
             if (GetSetting('archive_dir') == '/dev/null') {
@@ -95,7 +55,7 @@ function ArchiveTest($id, $delete = false) {
                       SaveTestInfo($id, $testInfo);
                   }
               }
-              
+
               if (!$ret) {
                 $lock = LockTest($id);
                 if (isset($lock)) {
@@ -115,133 +75,80 @@ function ArchiveTest($id, $delete = false) {
                                   $count++;
                                   $zip->addFile($filePath, $file);
                                 }
-                                // Add the video directories, trace, tcpdump and bodies files
-                                foreach ($files as $file) {
-                                    $filePath = "$testPath/$file";
-                                    if (is_file($filePath)) {
-                                        if (!ArchiveSkipFile($file) && ArchiveFilterLargeFile($file)) {
-                                            $file_size = filesize($filePath);
-                                            if (!$max_zip_size || $zip_size + $file_size <= $max_zip_size) {
-                                                $zip_size += $file_size;
-                                                $zip->addFile($filePath, $file);
-                                            }
-                                        }
-                                    } elseif ($file != '.' && $file != '..' && is_dir($filePath)) {
-                                        $subFiles = scandir($filePath);
-                                        if ($subFiles) {
-                                            $zip->addEmptyDir($file);
-                                            foreach ($subFiles as $subFile) {
-                                                if( is_file("$filePath/$subFile") ) {
-                                                    $file_size = filesize("$filePath/$subFile");
-                                                    if (!$max_zip_size || $zip_size + $file_size <= $max_zip_size) {
-                                                        $zip_size += $file_size;
-                                                        $zip->addFile("$filePath/$subFile", "$file/$subFile");
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                $zip->close();
+                              } else if ($file != '.' && $file != '..' && is_dir($filePath)) {
+                                  $subFiles = scandir($filePath);
+                                  if ($subFiles) {
+                                      $zip->addEmptyDir($file);
+                                      foreach ($subFiles as $subFile) {
+                                          if( is_file("$filePath/$subFile") )
+                                              $zip->addFile("$filePath/$subFile", "$file/$subFile");
+                                      }
+                                  }
+                              }
+                          }
+                          $zip->close();
 
-                                // move the archive to its final destination
-                                if ($count && is_file($zipFile)) {
-                                    if ($capture_server && $capture_salt) {
-                                        $host = str_replace('.', '', trim(GetSetting('host')));
-                                        $cpid = GetCPID($host, $capture_salt);
-                                        $url = "{$capture_server}hawkcaptureserver/up-wpt.ashx?test=$id&node=$host";
-                                        $result = cp_http_post($url, null, $cpid, $zipFile);
-                                        if (isset($result)) {
-                                            $archive_log = GetSetting('archive_log');
-                                            if ($archive_log) {
-                                                error_log(gmdate('Y/m/d H:i:s - ') . "$id\n", 3, $archive_log);
-                                            }
-                                            $ret = true;
-                                        }
-                                    } elseif (GetSetting('archive_dir')) {
-                                        $dest = GetArchiveFile($id, true);
-                                        if (rename($zipFile, $dest)) {
-                                            if (VerifyArchive($id))
-                                                $ret = true;
-                                        }
-                                    } elseif (GetSetting('archive_s3_server') &&
-                                                GetSetting('archive_s3_key') &&
-                                                GetSetting('archive_s3_secret') &&
-                                                GetSetting('archive_s3_bucket')) {
-                                        // post the file to an S3-style bucket (just supporting Internet Archive right now)
-                                        require_once('./lib/S3.php');
-                                        $urlstyle = GetSetting('archive_s3_urlstyle') ? trim(GetSetting('archive_s3_urlstyle')) : 'vhost';
-                                        $s3 = new S3(trim(GetSetting('archive_s3_key')), trim(GetSetting('archive_s3_secret')), false, trim(GetSetting('archive_s3_server')), $urlstyle);
-                                        $separator = strrpos($id, '_');
-                                        if ($separator !== false) {
-                                            $bucket = GetSetting('archive_s3_bucket');
-                                            $file = "$id.zip";
-                                            $metaHeaders = array();
-                                            $requestHeaders = array();
-                                            if (trim(GetSetting('archive_s3_server')) == 's3.us.archive.org') {
-                                                // special-case Internet Archive storage
-                                                $bucket = GetSetting('archive_s3_bucket') . '_' . substr($id, 0, $separator);
-                                                $file = substr($id, $separator + 1);
-                                                $requestHeaders = array('x-archive-queue-derive' => '0',
-                                                                        'x-archive-meta-collection' => 'httparchive',
-                                                                        'x-archive-auto-make-bucket' => '1');
-                                            }
-                                            if ($s3->putObject($s3->inputFile($zipFile, false), $bucket, $file, S3::ACL_PRIVATE, $metaHeaders, $requestHeaders))
-                                                $ret = true;
-                                        }
-                                    } elseif (GetSetting('archive_url')) {
-                                        $archive_url = GetSetting('archive_url');
-                                        if ($archive_url) {
-                                            $archive_url .= "$id.zip";
-                                            if (http_put_file($archive_url, $zipFile)) {
-                                                $ret = true;
-                                            }
-                                        }
+                          // move the archive to its final destination
+                          if ($count && is_file($zipFile)) {
+                              if (array_key_exists('archive_dir', $settings)) {
+                                  $dest = GetArchiveFile($id, true);
+                                  if (rename($zipFile, $dest)) {
+                                      if (VerifyArchive($id))
+                                          $ret = true;
+                                  }
+                              } elseif (array_key_exists('archive_s3_server', $settings) &&
+                                          array_key_exists('archive_s3_key', $settings) &&
+                                          array_key_exists('archive_s3_secret', $settings) &&
+                                          array_key_exists('archive_s3_bucket', $settings)) {
+                                  // post the file to an S3-style bucket (just supporting Internet Archive right now)
+                                  require_once('./lib/S3.php');
+                                  $urlstyle = array_key_exists('archive_s3_urlstyle', $settings) ? trim($settings['archive_s3_urlstyle']) : 'vhost';
+                                  $s3 = new S3(trim($settings['archive_s3_key']), trim($settings['archive_s3_secret']), false, trim($settings['archive_s3_server']), $urlstyle);
+                                  $separator = strrpos($id, '_');
+                                  if ($separator !== false) {
+                                      $bucket = $settings['archive_s3_bucket'];
+                                      $file = "$id.zip";
+                                      $metaHeaders = array();
+                                      $requestHeaders = array();
+                                      if (trim($settings['archive_s3_server']) == 's3.us.archive.org') {
+                                          // special-case Internet Archive storage
+                                          $bucket = $settings['archive_s3_bucket'] . '_' . substr($id, 0, $separator);
+                                          $file = substr($id, $separator + 1);
+                                          $requestHeaders = array('x-archive-queue-derive' => '0',
+                                                                  'x-archive-meta-collection' => 'httparchive',
+                                                                  'x-archive-auto-make-bucket' => '1');
+                                      }
+                                      if ($s3->putObject($s3->inputFile($zipFile, false), $bucket, $file, S3::ACL_PRIVATE, $metaHeaders, $requestHeaders))
+                                          $ret = true;
+                                  }
+                              } elseif (array_key_exists('archive_url', $settings)) {
+                                $archive_url = GetSetting('archive_url');
+                                if ($archive_url) {
+                                    $archive_url .= "$id.zip";
+                                    if (http_put_file($archive_url, $zipFile)) {
+                                        $ret = true;
                                     }
                                 }
-                                // make sure we don't leave a file hanging around
-                                if (is_file($zipFile))
-                                    unlink($zipFile);
-                                if ($ret) {
-                                    touch("$testPath/.archived");
-                                }
-                            }
-                        }
-                        UnlockTest($lock);
-                    }
+                              }
+                          }
+                          // make sure we don't leave a file hanging around
+                          if (is_file($zipFile))
+                              unlink($zipFile);
+                          if ($ret && $store_result) {
+                              $testInfo['archived'] = true;
+                              SaveTestInfo($id, $testInfo);
+                          }
+                      }
+                  }
+                  UnlockTest($lock);
                 }
+              }
             }
         }
-        if ($ret && $delete && is_dir($testPath) && is_file("$testPath/.archived"))
+        if ($ret && $delete && is_dir($testPath))
           delTree("$testPath/");
     }
 
-    return $ret;
-}
-
-/**
- * Download a given test directly from the server that "owns" it
- */
-function DownloadArchive($id, $testServer) {
-    $ret = false;
-    $secret = GetServerSecret();
-    $lock = LockTest($id);
-    if (isset($lock)) {
-        $zipfile = "./tmp/$id.zip";
-        $download_url = "{$testServer}download.php?test=$id&s=$secret";
-        if (http_fetch_file($download_url, $zipfile)) {
-            if (is_file($zipfile) && filesize($zipfile)) {
-                $testPath = './' . GetTestPath($id);
-                if (!is_dir($testPath))
-                    mkdir( $testPath, 0777, true );
-                ZipExtract($zipfile, $testPath);
-                $ret = true;
-                touch("$testPath/.archived");
-            }
-            @unlink($zipfile);
-        }        
-        UnlockTest($lock);
-    }
     return $ret;
 }
 
@@ -252,63 +159,54 @@ function DownloadArchive($id, $testServer) {
 */
 function RestoreArchive($id) {
     $ret = false;
-    if (TestArchiveExpired($id)) {
-        return false;
-    }
-    $testServer = GetServerForTest($id);
-    if (isset($testServer)) {
-        if (DownloadArchive($id, $testServer)) {
-            return true;
-        }
-    }
     $lock = LockTest($id);
     if (isset($lock)) {
         $testInfo = GetTestInfo($id);
         if (!$testInfo && strpos($id, '.') === false && GetSetting('archive_dir') != '/dev/null') {
+            global $settings;
             $testPath = './' . GetTestPath($id);
-
-            // Get the capture server settings if configured and the test ID specifies a capture server
-            $capture_server = null;
-            $capture_salt = null;
-            if (preg_match('/^\d+[^_+][_ix]([^c_])+c/', $id, $matches)) {
-                $capture_prefix = $matches[1];
-                if ($capture_prefix) {
-                    $capture_server = GetSetting("cp_capture_$capture_prefix");
-                    $capture_salt = GetSetting("cp_capture_salt_$capture_prefix");
-                }
-            }
             $url = '';
             // see if we have an HTTP path where the file is archived
-            if (!$capture_server || !$capture_salt) {
-                $check_dir = $testPath;
-                for ($i = 0; $i <= 4; $i++) {
-                    $check_dir = dirname($check_dir);
-                    if (is_file("$check_dir/archive.dat")) {
-                        $url = trim(file_get_contents("$check_dir/archive.dat"));
-                        if (strlen($url))
-                            break;
-                    }
+            $check_dir = $testPath;
+            for ($i = 0; $i <= 4; $i++) {
+                $check_dir = dirname($check_dir);
+                if (is_file("$check_dir/archive.dat")) {
+                    $url = trim(file_get_contents("$check_dir/archive.dat"));
+                    if (strlen($url))
+                        break;
                 }
             }
+            $archive_settings = null;
+            // See if the test ID has a server-specific ID
+            if (preg_match('/_([^_])i/', $id, $matches)) {
+              $server = $matches[1];
+              if (isset($settings["{$server}_archive_s3_server"]) &&
+                  isset($settings["{$server}_archive_s3_key"]) &&
+                  isset($settings["{$server}_archive_s3_secret"]) &&
+                  isset($settings["{$server}_archive_s3_bucket"])) {
+                $archive_settings = array('archive_s3_server' => $settings["{$server}_archive_s3_server"],
+                                          'archive_s3_key' => $settings["{$server}_archive_s3_key"],
+                                          'archive_s3_secret' => $settings["{$server}_archive_s3_secret"],
+                                          'archive_s3_bucket' => $settings["{$server}_archive_s3_bucket"]);
+                if (isset($settings["{$server}archive_s3_urlstyle"]))
+                  $archive_settings['archive_s3_urlstyle'] = $settings["{$server}archive_s3_urlstyle"];
+              }
+            }
+            if (!isset($archive_settings)) {
+              $archive_settings = $settings;
+            }
             if (strlen($url) ||
-                ($capture_server && $capture_salt) ||
-                GetSetting('archive_dir') ||
-                GetSetting('archive_url') ||
-                GetSetting('archive_s3_url') ||
-                GetSetting('archive_s3_server')) {
+                array_key_exists('archive_dir', $archive_settings) ||
+                array_key_exists('archive_url', $archive_settings) ||
+                array_key_exists('archive_s3_url', $archive_settings) ||
+                array_key_exists('archive_s3_server', $archive_settings)) {
                 $deleteZip = true;
                 $do_not_download = false;
                 $zipfile = "./tmp/$id.zip";
-                if ($capture_server && $capture_salt) {
-                    $do_not_download = true;
-                    $host = str_replace('.', '', trim(GetSetting('host')));
-                    $cpid = GetCPID($host, $capture_salt);
-                    $cp_url = "{$capture_server}hawkcaptureserver/down-wpt.ashx?test=$id";
-                    cp_http_get_file($cp_url, $cpid, $zipfile);
-                } elseif (strlen($url)) {
+                if (strlen($url)) {
                     $url .= "/$id.zip";
                 } else {
-                    if (GetSetting('archive_dir')) {
+                    if (isset($archive_settings['archive_dir'])) {
                         $deleteZip = false;
                         $archiveZip = GetArchiveFile($id);
                         if (is_file($archiveZip)) {
@@ -316,26 +214,26 @@ function RestoreArchive($id) {
                             $do_not_download = true;
                             touch($zipfile);
                         }
-                    } elseif (GetSetting('archive_s3_url')) {
+                    } elseif (isset($archive_settings['archive_s3_url'])) {
                         $separator = strrpos($id, '_');
                         if ($separator !== false) {
-                            $bucket = GetSetting('archive_s3_bucket');
+                            $bucket = $archive_settings['archive_s3_bucket'];
                             $file = "$id";
-                            if (trim(GetSetting('archive_s3_server')) == 's3.us.archive.org') {
+                            if (trim($archive_settings['archive_s3_server']) == 's3.us.archive.org') {
                                 // special-case Internet Archive storage
-                                $bucket = GetSetting('archive_s3_bucket') . '_' . substr($id, 0, $separator);
+                                $bucket = $archive_settings['archive_s3_bucket'] . '_' . substr($id, 0, $separator);
                                 $file = substr($id, $separator + 1);
                             }
-                            $url = trim(GetSetting('archive_s3_url')) . "$bucket/$file.zip";
+                            $url = trim($archive_settings['archive_s3_url']) . "$bucket/$file.zip";
                         }
-                    } elseif (GetSetting('archive_s3_server') &&
-                                GetSetting('archive_s3_key') &&
-                                GetSetting('archive_s3_secret') &&
-                                GetSetting('archive_s3_bucket')) {
+                    } elseif (array_key_exists('archive_s3_server', $archive_settings) &&
+                                array_key_exists('archive_s3_key', $archive_settings) &&
+                                array_key_exists('archive_s3_secret', $archive_settings) &&
+                                array_key_exists('archive_s3_bucket', $archive_settings)) {
                         require_once('./lib/S3.php');
-                        $urlstyle = GetSetting('archive_s3_urlstyle') ? trim(GetSetting('archive_s3_urlstyle')) : 'vhost';
-                        $s3 = new S3(trim(GetSetting('archive_s3_key')), trim(GetSetting('archive_s3_secret')), false, trim(GetSetting('archive_s3_server')), $urlstyle);
-                        $bucket = GetSetting('archive_s3_bucket');
+                        $urlstyle = array_key_exists('archive_s3_urlstyle', $archive_settings) ? trim($archive_settings['archive_s3_urlstyle']) : 'vhost';
+                        $s3 = new S3(trim($archive_settings['archive_s3_key']), trim($archive_settings['archive_s3_secret']), false, trim($archive_settings['archive_s3_server']), $urlstyle);
+                        $bucket = $archive_settings['archive_s3_bucket'];
                         $file = "$id.zip";
                         $s3->getObject($bucket, $file, $zipfile);
                     }
@@ -358,14 +256,17 @@ function RestoreArchive($id) {
                         }
                     }
                 }
-                if (is_file($zipfile) && filesize($zipfile)) {
+                if (is_file($zipfile)) {
                   if (!is_dir($testPath))
                       mkdir( $testPath, 0777, true );
                   ZipExtract($zipfile, $testPath);
                   $ret = true;
                   $testInfo = GetTestInfo($id);
                   if ($testInfo) {
-                    touch("$testPath/.archived");
+                    $testInfo['archived'] = true;
+                    $testInfo['restored'] = true;
+                    $testInfo['restoredDataOnly'] = false;
+                    SaveTestInfo($id, $testInfo);
                   }
                   if ($deleteZip)
                     @unlink($zipfile);
@@ -386,23 +287,13 @@ function RestoreArchive($id) {
 */
 function VerifyArchive($id) {
     $valid = true;
+    global $settings;
 
-    // Get the capture server settings if configured and the test ID specifies a capture server
-    $capture_server = null;
-    $capture_salt = null;
-    if (preg_match('/^\d+[^_+][_ix]([^c_])+c/', $id, $matches)) {
-        $capture_prefix = $matches[1];
-        if ($capture_prefix) {
-            $capture_server = GetSetting("cp_capture_$capture_prefix");
-            $capture_salt = GetSetting("cp_capture_salt_$capture_prefix");
-        }
-    }
-    
-    if (!isset($capture_server) && !GetSetting('trust_archive') && GetSetting('archive_dir') != '/dev/null') {
-        $testPath = './' . GetTestPath($id);
-        if (GetSetting('archive_dir')) {
+    if (!GetSetting('trust_archive') && GetSetting('archive_dir') != '/dev/null') {
+        if (isset($settings['archive_dir'])) {
             // local
             $valid = false;
+            $testPath = realpath('./' . GetTestPath($id));
             $archive = GetArchiveFile($id);
             if (is_dir($testPath) && is_file($archive)) {
                 chmod($archive, 0777);
@@ -441,34 +332,28 @@ function VerifyArchive($id) {
             } else {
                 logMsg("$id - Zip file missing ($archive)");
             }
-        } elseif (GetSetting('archive_s3_server') &&
-                    GetSetting('archive_s3_key') &&
-                    GetSetting('archive_s3_secret') &&
-                    GetSetting('archive_s3_bucket') &&
-                    trim(GetSetting('archive_s3_server')) != 's3.us.archive.org') {
+        } elseif (array_key_exists('archive_s3_server', $settings) &&
+                    array_key_exists('archive_s3_key', $settings) &&
+                    array_key_exists('archive_s3_secret', $settings) &&
+                    array_key_exists('archive_s3_bucket', $settings) &&
+                    trim($settings['archive_s3_server']) != 's3.us.archive.org') {
             // S3
             $valid = false;
             require_once('./lib/S3.php');
-            $urlstyle = GetSetting('archive_s3_urlstyle') ? trim(GetSetting('archive_s3_urlstyle')) : 'vhost';
-            $s3 = new S3(trim(GetSetting('archive_s3_key')), trim(GetSetting('archive_s3_secret')), false, trim(GetSetting('archive_s3_server')), $urlstyle);
-            $bucket = GetSetting('archive_s3_bucket');
+            $urlstyle = array_key_exists('archive_s3_urlstyle', $settings) ? trim($settings['archive_s3_urlstyle']) : 'vhost';
+            $s3 = new S3(trim($settings['archive_s3_key']), trim($settings['archive_s3_secret']), false, trim($settings['archive_s3_server']), $urlstyle);
+            $bucket = $settings['archive_s3_bucket'];
             $file = "$id.zip";
-            
+
             if (($info = $s3->getObjectInfo($bucket, $file)) !== false) {
                 $valid = true;
             }
-        } elseif (GetSetting('archive_url')) {
+        } elseif (array_key_exists('archive_url', $settings)) {
             $archive_url = GetSetting('archive_url');
             if ($archive_url) {
-                $valid = false;
-                $url = $archive_url . "$id.zip";
-                // Send a HEAD request to verify the archive
-                if (http_head($url)) {
-                    touch("$testPath/.archived");
-                    $valid = true;
-                } elseif (is_file("$testPath/.archived")) {
-                    unlink("$testPath/.archived");
-                }
+                // If the test is marked as archived and we are using url-based archiving then assume it is valid.
+                // It is possible to do a HEAD check to be sure but the archived bit is only set if the POST succeeded.
+                $valid = true;
             }
         }
     }
@@ -484,11 +369,12 @@ function VerifyArchive($id) {
 */
 function GetArchiveFile($id, $create_directory = false)
 {
+    global $settings;
     $file = null;
-    if (GetSetting('archive_dir') && strlen($id)) {
+    if (isset($settings['archive_dir']) && strlen($id)) {
         $testPath = GetTestPath($id);
         if (strlen($testPath)) {
-            $file = GetSetting('archive_dir') . $testPath . '.zip';
+            $file = $settings['archive_dir'] . $testPath . '.zip';
             if ($create_directory) {
                 $dir = dirname($file);
                 if(!is_dir($dir)) {
@@ -508,69 +394,4 @@ function ArchiveApi($id) {
     touch("$testPath/archive.me");
   }
 }
-
-/***************************************************************************
- * Video archive support
- ***************************************************************************/
-function RestoreVideoArchive($id) {
-    $archive_url = GetSetting('video_archive_url');
-    $s3_server = GetSetting('archive_s3_server');
-    $s3_key = GetSetting('archive_s3_key');
-    $s3_secret = GetSetting('archive_s3_secret');
-    $s3_bucket = GetSetting('archive_s3_bucket');
-    $s3_urlstyle = GetSetting('archive_s3_urlstyle');
-    $zipFile = "./tmp/video_$id.zip";
-
-    if (TestArchiveExpired($id)) {
-        return;
-    }
-
-    $videoPath = './' . GetVideoPath($id);
-    if (is_dir($videoPath)) {
-        // Update the last time it was accessed
-        if (is_file("$videoPath/.archive")) {
-            touch("$videoPath/.archive");
-        }
-    } elseif ( is_string($archive_url) ) {
-        $lock = Lock("video-$id");
-        if ($lock) {
-            // Try restoring it
-            $archive_url .= "$id.zip";
-            if (http_fetch_file($archive_url, $zipFile)) {
-                if (is_file($zipFile) && filesize($zipFile)) {
-                    if (!is_dir($videoPath))
-                        mkdir( $videoPath, 0777, true );
-                    ZipExtract($zipFile, $videoPath);
-                    touch("$videoPath/.archive");
-                }
-            }
-            // make sure we don't leave a file hanging around
-            if (is_file($zipFile)) {
-                unlink($zipFile);
-            }
-            UnLock($lock);
-        }
-    } elseif(is_string($s3_server) && is_string($s3_key) && is_string($s3_secret) && is_string($s3_bucket)) {
-        $lock = Lock("video-$id");
-        if ($lock) {
-            require_once('./lib/S3.php');
-            $urlstyle = is_string($s3_urlstyle) ? trim($s3_urlstyle) : 'vhost';
-            $s3 = new S3(trim($s3_key), trim($s3_secret), false, trim($s3_server), $urlstyle);
-            $bucket = trim($s3_bucket);
-            $file = "video-$id.zip";
-            $s3->getObject($bucket, $file, $zipfile);
-            if (is_file($zipFile) && filesize($zipFile)) {
-                if (!is_dir($videoPath))
-                    mkdir( $videoPath, 0777, true );
-                ZipExtract($zipFile, $videoPath);
-                touch("$videoPath/.archive");
-            }
-            if (is_file($zipFile)) {
-                unlink($zipFile);
-            }
-            UnLock($lock);
-        }
-    }
-}
-
 ?>
