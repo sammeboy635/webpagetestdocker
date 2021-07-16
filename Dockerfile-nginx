@@ -12,6 +12,11 @@ COPY docker/server/config/default /etc/nginx/sites-enabled
 COPY --chown=nginx www/ /var/www/webpagetest
 COPY docker/server/config/locations.ini /var/www/webpagetest/settings/locations.ini
 COPY docker/server/config/connectivity.ini /var/www/webpagetest/settings/connectivity.ini
+#COPY docker/server/config/settings.tpl /var/www/webpagetest/settings/settings.tpl
+COPY docker/server/config/mobile_devices.ini /var/www/webpagetest/settings/mobile_devices.ini
+
+RUN chown -R nginx /var/www/webpagetest/settings/
+
 
 USER nginx
 EXPOSE 8181
