@@ -1,4 +1,4 @@
-DOCKER_TAG   = upgrade-test#$(shell date +%Y-%m-%d)
+DOCKER_TAG   = upgrade-test-2#$(shell date +%Y-%m-%d)
 
 default: build-alpine
 
