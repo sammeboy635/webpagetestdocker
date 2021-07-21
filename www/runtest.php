@@ -82,7 +82,7 @@
         $keys_file = __DIR__ . '/settings/common/keys.ini';
       if (file_exists(__DIR__ . '/settings/server/keys.ini'))
         $keys_file = __DIR__ . '/settings/server/keys.ini';
-      $api_keys = parse_ini_file($keys_file, true);	
+      $api_keys = parse_ini_file($keys_file, true);
     }
 
     if( isset($req_f) && !strcasecmp($req_f, 'xml') )
@@ -171,7 +171,9 @@
             $maxTime = GetSetting('maxtime');
             if ($maxTime && $test['timeout'] > $maxTime)
               $test['timeout'] = (int)$maxTime;
-            //$test['maxTestTime'] = isset($req_maxTestTime) ? (int)$req_maxTestTime : 120;
+            $run_time_limit = GetSetting('run_time_limit');
+            if ($run_time_limit)
+              $test['run_time_limit'] = (int)$run_time_limit;
             $test['connections'] = isset($req_connections) ? (int)$req_connections : 0;
             if (isset($req_private)) {
               $test['private'] = $req_private;
@@ -426,13 +428,13 @@
               $test['addCmdLine'] .= "--host-resolver-rules=\"$req_hostResolverRules,EXCLUDE localhost,EXCLUDE 127.0.0.1\"";
             }
 
-            // see if we need to process a template for these requests	
+            // see if we need to process a template for these requests
             if (isset($req_k) && strlen($req_k) && isset($api_keys)) {
-              if (count($api_keys) && array_key_exists($req_k, $api_keys) && array_key_exists('template', $api_keys[$req_k])) {	
-                  $template = $api_keys[$req_k]['template'];	
-                  if (is_file("./settings/common/templates/$template.php"))	
-                      include("./settings/common/templates/$template.php");	
-              }	
+              if (count($api_keys) && array_key_exists($req_k, $api_keys) && array_key_exists('template', $api_keys[$req_k])) {
+                  $template = $api_keys[$req_k]['template'];
+                  if (is_file("./settings/common/templates/$template.php"))
+                      include("./settings/common/templates/$template.php");
+              }
             }
 
             // Extract the location, browser and connectivity.
@@ -530,7 +532,7 @@
                 }
               }
             }
-        
+
             if (!$test['mobile'] && (!$test['browser_width'] || !$test['browser_height'])) {
               $browser_size = GetSetting('default_browser_size');
               if ($browser_size) {
@@ -667,14 +669,14 @@
                 unset($test['spam']);
             $test['priority'] = intval(GetSetting('user_priority', 0));
         }
-       
-        if ($test['mobile'] && is_file('./settings/mobile_devices.ini')) {
-          $devices = parse_ini_file('./settings/mobile_devices.ini', true);
+
+        if ($test['mobile']) {
+          $devices = LoadMobileDevices();
+          $is_mobile = true;
           if ($devices) {
             if (isset($test['mobileDevice'])) {
               setcookie('mdev', $test['mobileDevice'], time()+60*60*24*365, '/');
             }
-            
             if (!isset($test['mobileDevice']) || !isset($devices[$test['mobileDevice']])) {
               // Grab the first device from the list
               $test['mobileDevice'] = key($devices);
@@ -739,7 +741,7 @@
         if (!strlen($error)) {
           ValidateKey($test, $error);
         }
-        if( !strlen($error) && CheckIp($test) && CheckUrl($test['url']) )
+        if( !strlen($error) && CheckIp($test) && CheckUrl($test['url']) && CheckRateLimit($test, $error) )
         {
 
             if( !array_key_exists('id', $test) )
@@ -1607,9 +1609,9 @@ function ValidateScript(&$script, &$error)
                 }
                 $ok = true;
                 $url = trim($tokens[1]);
-                if (stripos($url, '%URL%') !== false || 
-                        stripos($url, '%ORIGIN%') !== false || 
-                        stripos($url, '%HOST%') !== false || 
+                if (stripos($url, '%URL%') !== false ||
+                        stripos($url, '%ORIGIN%') !== false ||
+                        stripos($url, '%HOST%') !== false ||
                         stripos($url, '%HOSTR%') !== false ||
                         stripos($url, '%HOST_REGEX%') !== false) {
                     $url = null;
@@ -2018,7 +2020,7 @@ function LogTest(&$test, $testId, $url)
     }
 
     $redis_server = GetSetting('redis_test_history');
-    
+
     $key = isset($test['key']) ? $test['key'] : null;
     if ($key == GetServerKey()) {
       $key = null;
@@ -2271,9 +2273,9 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
         $test['path'] = './' . GetTestPath($testId);
 
         // create the folder for the test results
-        if( !is_dir($test['path']) ) 
+        if( !is_dir($test['path']) )
             mkdir($test['path'], 0777, true);
-        
+
         // Fetch the CrUX data for the URL
         $crux_data = GetCruxDataForURL($url, $is_mobile);
         if (isset($crux_data) && strlen($crux_data)) {
@@ -2288,8 +2290,11 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
         // write out the ini file
         $testInfo = "[test]\r\n";
         AddIniLine($testInfo, "fvonly", $test['fvonly']);
-        AddIniLine($testInfo, "timeout", $test['timeout']);
-        //AddIniLine($testInfo, "maxTestTime", $test["maxTestTime"]);
+        $timeout = $test['timeout'];
+        if (!$timeout) {
+          $timeout = GetSetting('step_timeout', $timeout);
+        }
+        AddIniLine($testInfo, "timeout", $timeout);
         $resultRuns = isset($test['discard']) ? $test['runs'] - $test['discard'] : $test['runs'];
         AddIniLine($testInfo, "runs", $resultRuns);
         AddIniLine($testInfo, "location", "\"{$test['locationText']}\"");
@@ -2337,30 +2342,38 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
             // build up the json test job
             $job = array();
             // build up the actual test commands
-            $testFile = '';
-            if( strlen($test['domElement']) )
-                AddIniLine($testFile, 'DOMElement', $test['domElement']);
-            if( $test['fvonly'] )
-                AddIniLine($testFile, 'fvonly', '1');
-            if( $test['timeout'] )
-                AddIniLine($testFile, 'timeout', $test['timeout']);
-            //if( isset($test['maxTestTime']) ) {
-            //    AddIniLine($testFile, "maxTestTime", $test["maxTestTime"]);
-            //}
-            if( isset($test['web10']) && $test['web10'] )
-                AddIniLine($testFile, 'web10', '1');
-            if( $test['ignoreSSL'] )
-                AddIniLine($testFile, 'ignoreSSL', '1');
-            if( $test['tcpdump'] )
-                AddIniLine($testFile, 'tcpdump', '1');
-            if( $test['standards'] )
-                AddIniLine($testFile, 'standards', '1');
-            if( $test['timeline'] ) {
-                AddIniLine($testFile, 'timeline', '1');
-                AddIniLine($testFile, 'timelineStackDepth', $test['timelineStackDepth']);
+            if (isset($test['priority']))
+              $job["priority"] = $test['priority'];
+            if( isset($test['fvonly']) && $test['fvonly'] ) {
+                $job['fvonly'] = 1;
+            } else {
+                $job['fvonly'] = 0;
             }
-            if( $test['trace'] )
-                AddIniLine($testFile, 'trace', '1');
+            if( $timeout )
+                $job['timeout'] = intval($timeout);
+            if (isset($test['run_time_limit']))
+              $job["run_time_limit"] = $test['run_time_limit'];
+            if( isset($test['web10']) && $test['web10'] )
+                $job['web10'] = 1;
+            if( isset($test['ignoreSSL']) && $test['ignoreSSL'] )
+                $job['ignoreSSL'] = 1;
+            if( isset($test['tcpdump']) && $test['tcpdump'] )
+                $job['tcpdump'] = 1;
+            if( isset($test['standards']) && $test['standards'] )
+                $job['standards'] = 1;
+            if( isset($test['timeline']) && $test['timeline'] ) {
+                $job['timeline'] = 1;
+                if (isset($test['discard_timeline']) && $test['discard_timeline'])
+                  $job['discard_timeline'] = 1;
+                if (isset($test['profiler']) && $test['profiler'])
+                  $job['profiler'] = 1;
+                if (isset($test['timeline_fps']))
+                  $job['timeline_fps'] = intval($test['timeline_fps']);
+                if (isset($test['timelineStackDepth']))
+                  $job['timelineStackDepth'] = intval($test['timelineStackDepth']);
+            }
+            if( isset($test['trace']) && $test['trace'] )
+                $job['trace'] = 1;
             if (isset($test['traceCategories']))
                 $job['traceCategories'] = $test['traceCategories'];
             if( isset($test['swrender']) && $test['swrender'] )
@@ -2555,12 +2568,25 @@ function CreateTest(&$test, $url, $batch = 0, $batch_locations = 0)
               $crux_key = explode(',', $crux_keys);
               $job['crux_api_key'] = trim($crux_key[array_rand($crux_key)]);
             }
-            if( !SubmitUrl($testId, $testFile, $test, $url) )
+            // Generate the job file name
+            $ext = 'url';
+            if( $test['priority'] )
+                $ext = "p{$test['priority']}";
+            $test['job'] = "$testId.$ext";
+
+            // Write out the json before submitting the test to the queue
+            $oldUrl = @$test['url'];
+            $test['url'] = $url;
+            $test['id'] = $testId;
+            SaveTestInfo($testId, $test);
+            $test['url'] = $oldUrl;
+
+            if( !SubmitUrl($testId, $job, $test, $url) )
                 $testId = null;
         } elseif (isset($testId)) {
             $oldUrl = @$test['url'];
             $test['url'] = $url;
-            $test['id'] = $testId; 
+            $test['id'] = $testId;
             SaveTestInfo($testId, $test);
             $test['url'] = $oldUrl;
         }
@@ -2826,6 +2852,11 @@ function GetClosestLocation($url, $browser) {
 }
 
 function ErrorPage($error) {
+    global $privateInstall;
+    global $supportsAuth;
+    global $supportsSaml;
+    global $USER_EMAIL;
+    global $user;
     ?>
     <!DOCTYPE html>
     <html lang="en-us">
@@ -2927,9 +2958,12 @@ function ProcessTestScript($url, &$test) {
 */
 function ValidateCommandLine($cmd, &$error) {
   if (isset($cmd) && strlen($cmd)) {
-    if (isset($cmd) && strlen($cmd)) {
-      if (!preg_match('/^(?:(?:^|\s+)(--[\w-]+(?:=\S+|="[^"]*")?))*\s*$/', $cmd)) {
-        $error = 'Invalid command-line: "' . htmlspecialchars($cmd) . '"';
+    $flags = explode(' ', $cmd);
+    if ($flags && is_array($flags) && count($flags)) {
+      foreach($flags as $flag) {
+        if (strlen($flag) && !preg_match('/^--(([a-zA-Z0-9\-\.\+=,_< "]+)|((data-reduction-proxy-http-proxies|data-reduction-proxy-config-url|proxy-server|proxy-pac-url|force-fieldtrials|force-fieldtrial-params|trusted-spdy-proxy|origin-to-force-quic-on|oauth2-refresh-token|unsafely-treat-insecure-origin-as-secure|user-data-dir)=[a-zA-Z0-9\-\.\+=,_:\/"%]+))$/', $flag)) {
+          $error = 'Invalid command-line option: "' . htmlspecialchars($flag) . '"';
+        }
       }
     }
   }
@@ -2958,7 +2992,7 @@ function ReportAnalytics(&$test, $testId)
     $ip = $_SERVER['REMOTE_ADDR'];
     if( array_key_exists('ip',$test) && strlen($test['ip']) )
         $ip = $test['ip'];
-    
+
     $eventName = $usingAPI ? 'API' : 'Manual';
     if ($usingApi2) {
       $eventName = 'API2';
@@ -3019,6 +3053,52 @@ function ReportAnalytics(&$test, $testId)
     curl_exec($ch);
     curl_close($ch);
   }
+}
+
+function CheckRateLimit($test, &$error) {
+  global $USER_EMAIL;
+  global $supportsSaml;
+  $ret = true;
+
+  // Only check when we have a valid remote IP
+  if (!isset($test['ip']) || $test['ip'] == '127.0.0.1') {
+    return true;
+  }
+
+  // Allow API tests
+  if (isset($test['key'])) {
+    return true;
+  }
+
+  // let logged-in users pass
+  if (isset($USER_EMAIL) && strlen($USER_EMAIL)) {
+    return true;
+  }
+
+  // Enforce per-IP rate limits for testing
+  $limit = GetSetting('rate_limit_anon', null);
+  if (isset($limit) && $limit > 0) {
+    $cache_key = 'rladdr_' . $test['ip'];
+    $count = CacheFetch($cache_key);
+    if (!isset($count)) {
+      $count = 0;
+    }
+    if ($count < $limit) {
+      $count++;
+      CacheStore($cache_key, $count, 1800);
+    } else {
+      $register = GetSetting('saml_register');
+      $apiUrl = GetSetting('api_url');
+      if ($supportsSaml && $register && $apiUrl) {
+        $error = "The test has been blocked for exceeding the volume of testing allowed by anonymous users from your IP address.<br>Please <a href='/saml/login.php'>log in</a> with a <a href='$register'>registered account</a> or wait an hour before retrying.<br>If you need to run tests programmatically there is also the <a href='$apiUrl'>WebPageTest API</a>.";
+      } else {
+        $error = "The test has been blocked for exceeding the volume of testing allowed by anonymous users from your IP address.<br>Please log in with a registered account or wait an hour before retrying.";
+      }
+      $ret = false;
+    }
+  }
+
+  return $ret;
 }
 
 ?>
