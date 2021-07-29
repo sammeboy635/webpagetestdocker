@@ -83,7 +83,7 @@ ENV PYTHONUNBUFFERED=1
 
 RUN apk add --no-cache supervisor beanstalkd zip libzip python2 libtheora rtmpdump x264-dev x265-dev \
     libpng libjpeg imagemagick imagemagick-libs imagemagick-dev libass librtmp libvpx libwebp lame pcre \
-    libogg libvorbis exiftool libjpeg-turbo-utils freetype zlib x264-libs x265 libzip opus \
+    libogg libvorbis exiftool libjpeg-turbo-utils freetype zlib x264-libs x265 libzip opus bash \
     && apk add --no-cache --virtual .build-deps zlib-dev libpng-dev jpeg-dev freetype-dev \
     libzip-dev curl-dev autoconf gcc libc-dev make \
     && python -m ensurepip \
@@ -107,11 +107,13 @@ COPY --from=build /usr/lib/librav1e.so /usr/lib/librav1e.so
 
 COPY docker/server/config/fpm-pool.conf /etc/php7/php-fpm.d/www.conf
 COPY docker/server/config/php.ini /usr/local/etc/php/
+COPY docker/server/config/crontab /etc/crontab
 
 COPY docker/server/config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/server/config/supervisord/supervisord_php-fpm.conf /etc/supervisor/conf.d/supervisord_php-fpm.conf
 COPY docker/server/config/supervisord/supervisord_beanstalkd.conf /etc/supervisor/conf.d/supervisord_beanstalkd.conf
 COPY docker/server/config/supervisord/supervisord_ec2init.conf /etc/supervisor/conf.d/supervisord_ec2init.conf
+COPY docker/server/config/supervisord/supervisord_cron.conf /etc/supervisor/conf.d/supervisord_cron.conf
 
 COPY --chown=nobody www/ /var/www/webpagetest
 COPY docker/server/config/locations.ini /var/www/webpagetest/settings/locations.ini
@@ -122,13 +124,11 @@ COPY docker/server/config/mobile_devices.ini /var/www/webpagetest/settings/mobil
 RUN chown -R nobody /var/www/webpagetest/settings/
 COPY docker/server/scripts/ /scripts/
 
-COPY docker/server/config/periodic/15min/wpt_cron_call.sh /etc/periodic/15min/
-COPY docker/server/config/periodic/hourly/wpt_cron_call.sh /etc/periodic/hourly/
-
 RUN chmod 755 /scripts/* \
     && chown -R nobody.nobody /run \
     && mkdir -p /var/www/webpagetest/results \
-    && chown -R nobody.nobody /var/www/webpagetest/results
+    && chown -R nobody.nobody /var/www/webpagetest/results \
+    && crontab /etc/crontab
 
 USER nobody
 WORKDIR /var/www/webpagetest
