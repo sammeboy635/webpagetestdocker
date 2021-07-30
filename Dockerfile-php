@@ -131,8 +131,8 @@ RUN chmod 755 /scripts/* \
     && chown -R nobody.nobody /run \
     && mkdir -p /var/www/webpagetest/results \
     && chown -R nobody.nobody /var/www/webpagetest/results \
-    && mkdir -p /var/www/webpagetest/jobs/video \
-    && chown -R nobody.nobody /var/www/webpagetest/jobs/video \
+    && mkdir -p /var/www/webpagetest/work/video \
+    && chown -R nobody.nobody /var/www/webpagetest/work/video \
     && crontab /etc/crontab
 
 USER nobody
