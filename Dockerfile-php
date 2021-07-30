@@ -122,7 +122,7 @@ COPY docker/server/config/locations.ini /var/www/webpagetest/settings/locations.
 COPY docker/server/config/connectivity.ini /var/www/webpagetest/settings/connectivity.ini
 #COPY docker/server/config/settings.ini /var/www/webpagetest/settings/settings.ini
 COPY docker/server/config/mobile_devices.ini /var/www/webpagetest/settings/mobile_devices.ini
-COPY docker/server/config/vidoe.ini /var/www/webpagetest/video/settings/video.ini
+COPY docker/server/config/video.ini /var/www/webpagetest/video/settings/video.ini
 
 RUN chown -R nobody /var/www/webpagetest/settings/
 COPY docker/server/scripts/ /scripts/
