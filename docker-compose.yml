@@ -4,32 +4,38 @@ version: '3.6'
 services:
 
   web:
-    build:
-      context: ./
-      dockerfile: Dockerfile-ngix
-    image: baqend/webpagetest-nginx:2021-06-28
+    image: baqend/webpagetest-nginx:upgrade-test-3
+    #image: baqend/webpagetest-nginx:2021-06-28
     ports:
-      - "80:8080"
+      - target: 8080
+        published: 80
+        protocol: tcp
+        mode: host
     volumes:
-      - /var/www/webpagetest/www/results:/var/www/webpagetest/results:ro
+      - upgrade-results:/var/www/webpagetest/results:ro
+      - upgrade-work:/var/www/webpagetest/work:ro
     deploy:
       replicas: 1
       placement:
         constraints:
-          - 'node.labels.master == true'
+          - 'node.labels.upgrade-test == true'
+    secrets:
+      - source: wpt_settings_ini
+        target: /var/www/webpagetest/settings/settings.ini
+      - source: wpt_keys_ini
+        target: /var/www/webpagetest/settings/keys.ini
 
   php:
-    build:
-      context: ./
-      dockerfile: Dockerfile-php
-    image: baqend/webpagetest-php:2021-06-28
+    image: baqend/webpagetest-php:2021-07-21
+    #image: baqend/webpagetest-php:2021-06-28
     volumes:
-      - /var/www/webpagetest/www/results:/var/www/webpagetest/results
+      - upgrade-results:/var/www/webpagetest/results
+      - upgrade-work:/var/www/webpagetest/work
     deploy:
       replicas: 1
       placement:
         constraints:
-          - 'node.labels.master == true'
+          - 'node.labels.upgrade-test == true'
     secrets:
       - source: wpt_settings_ini
         target: /var/www/webpagetest/settings/settings.ini
@@ -48,4 +54,5 @@ secrets:
     external: true
 
 volumes:
-  wpt-results:
+  upgrade-results:
+  upgrade-work:

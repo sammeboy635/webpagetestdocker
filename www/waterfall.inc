@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 require_once __DIR__ . '/common_lib.inc';
 require_once __DIR__ . '/draw.inc';
 require_once __DIR__ . '/contentColors.inc';
@@ -102,7 +105,8 @@ function GetRequestRows($requests, $use_dots, $show_labels = true) {
             'start' => $request['all_start'],
             'end' => $request['all_end'],
             'is_secure' => $request['is_secure'],
-            'requests' => array($request)
+            'requests' => array($request),
+            'contentType' => $request['contentType']
         );
 
         $last_request_number = $request['number'];
@@ -118,12 +122,13 @@ function GetRequestRows($requests, $use_dots, $show_labels = true) {
 * Return an array of page events selected from the page data.
 */
 function GetPageEvents($page_data) {
-    return array(
+    $ret = array(
         'render' => $page_data['render'],
         'first_contentful_paint' => $page_data['firstContentfulPaint'],
+        'lcp' => $page_data['chromeUserTiming.LargestContentfulPaint'],
         'dom_element' => $page_data['domTime'],
         'aft' =>  $page_data['aft'],
-        'nav_first_paint' => $page_data['firstPaint'],
+        'fcp' => $page_data['firstContentfulPaint'],
         'nav_load' => array($page_data['loadEventStart'],
                             $page_data['loadEventEnd']),
         'nav_dom' => array($page_data['domContentLoadedEventStart'],
@@ -131,6 +136,7 @@ function GetPageEvents($page_data) {
         'nav_dom_interactive' => $page_data['domInteractive'],
         'load' => $page_data['docTime']
         );
+    return $ret;
 }
 
 /**
@@ -152,19 +158,29 @@ function GetWaterfallImage($rows, $url, $page_events, $options, $page_data) {
     return _GetMapOrImage($rows, $url, $page_events, $options, $is_image_map, $page_data);
 }
 
+function _BaseDocumentUrl($url) {
+  $ret = $url;
+  if (isset($url)) {
+    $index = strpos($url, '#');
+    if ($index > 0) {
+      $ret = substr($url, 0, $index);
+    }
+  }
+  return $ret;
+}
+
 /**
 * Draw the waterfall view image.
 *
 * @return resource
 */
 function _GetMapOrImage($rows, $url, $page_events, $options, $is_image_map, $page_data) {
-    global $settings;
     $is_mime = isset($options['is_mime']) ? (bool)@$options['is_mime'] : (bool)GetSetting('mime_waterfalls', 1);
-    $is_state = (bool)@$options['is_state'] || $is_mime;
-    $is_thumbnail = (bool)@$options['is_thumbnail'];
-    $show_labels = (bool)@$options['show_labels'];
-    $include_js = (bool)@$options['include_js'];
-    $include_wait = (bool)@$options['include_wait'];
+    $is_state = (isset($options['is_state']) ? (bool)@$options['is_state'] : false) || $is_mime;
+    $is_thumbnail = isset($options['is_thumbnail']) ? (bool)@$options['is_thumbnail'] : false;
+    $show_labels = isset($options['show_labels']) ? (bool)@$options['show_labels'] : true;
+    $include_js = isset($options['include_js']) ? (bool)@$options['include_js'] : true;
+    $include_wait = isset($options['include_wait']) ? (bool)@$options['include_wait'] : true;
     $show_chunks = !isset($options['show_chunks']) || (bool)@$options['show_chunks'];
     $document_url = isset($page_data['document_URL']) ? $page_data['document_URL'] : null;
 
@@ -173,12 +189,12 @@ function _GetMapOrImage($rows, $url, $page_events, $options, $is_image_map, $pag
     if (isset($options) && array_key_exists('rowcount', $options) && $options['rowcount'] > 0)
       $row_count = $options['rowcount'];
 
-    $width = (int)@$_REQUEST['width'];
+    $width = isset($_REQUEST['width']) ? (int)@$_REQUEST['width'] : 0;
     if ((int)@$options['width']) {
         $width = (int)$options['width'];
     }
     if (!$width || (!$is_thumbnail && $width < 300) || $width > 200000) {
-        $width = 930;
+        $width = 1012;
     }
 
     if ($is_thumbnail) {
@@ -298,18 +314,6 @@ function _GetMapOrImage($rows, $url, $page_events, $options, $is_image_map, $pag
     }
     $x_scaler = new XScaler($max_ms, $data_x + 1, $data_width);
 
-    // Get the CSI information.
-    if (GetSetting('enable_csi') && is_dir('./google') && array_key_exists('enable_google_csi', $settings) && $settings['enable_google_csi'] == 1) {
-        require_once('./google/google_lib.inc');
-        if (@$settings['enable_google_csi_filter'] == 1) {
-            $filter = array('prt' => 1, 'ol' => 1, 'aft' => 1);
-        } else {
-            $filter = array();
-        }
-        $use_all = false;
-        $csi_params = ParseCsiInfoForStep($localPaths, $use_all);
-        $csi_info = TailorRtParamsForVisualization($csi_params, $filter);
-    }
     // get any user timings
     if (!isset($options['show_user_timing']) || $options['show_user_timing']) {
       if (isset($page_data) && array_key_exists('userTime', $page_data)) {
@@ -322,11 +326,15 @@ function _GetMapOrImage($rows, $url, $page_events, $options, $is_image_map, $pag
           }
         }
       }
-      if (isset($csi_info)) {
-        if (!isset($user_times))
-          $user_times = array();
-        foreach ($csi_info as $key => $value)
-          $user_times[$key] = $value;
+    }
+
+    // Get the layout shifts
+    $layout_shifts = array();
+    if (isset($page_data['LayoutShifts'])) {
+      foreach($page_data['LayoutShifts'] as $shift) {
+        if(isset($shift) && is_array($shift) && isset($shift['time']) && isset($shift['score']) && $shift['score'] >= 0.001) {
+          $layout_shifts[] = $shift['time'];
+        }
       }
     }
 
@@ -502,7 +510,7 @@ function _GetMapOrImage($rows, $url, $page_events, $options, $is_image_map, $pag
           if (!$is_thumbnail) {
             $font_height = imagefontheight($font);
             $label_y = $iTop + ($row_height / 2) - ($font_height / 2);
-            imagestring($im, $font, 50, $label_y, "Page is Interactive", $black);
+            imagestring($im, $font, 50, $label_y, "Long Tasks", $black);
           }
         }
 
@@ -551,16 +559,22 @@ function _GetMapOrImage($rows, $url, $page_events, $options, $is_image_map, $pag
             // Draw event lines (e.g start render, doc complete).
             $event_colors = array(
                 'render' => GetColor($im, 40, 188, 0),
+                'lcp' => GetColor($im, 0, 128, 0),
                 'dom_element' => GetColor($im, 242, 131, 0),
                 'load' => GetColor($im, 0, 0, 255),
                 'nav_load' => GetColor($im, 192, 192, 255),
                 'nav_dom' => GetColor($im, 216, 136, 223),
-                'nav_first_paint' => GetColor($im, 143, 188, 131),
+                'fcp' => GetColor($im, 57, 230, 0),
                 'nav_dom_interactive' => GetColor($im, 255, 198, 26),
                 'aft' => GetColor($im, 255, 0, 0),
                 'user' => GetColor($im, 105, 0, 158)
                 );
+
+            // draw the other page events
             foreach ($page_events as $event_name => &$event) {
+                if (!isset($event_colors[$event_name])) {
+                  continue;
+                }
                 $color = $event_colors[$event_name];
                 $endpoints = array(
                     array('y1' => $top + 1 + $row_height,
@@ -602,17 +616,40 @@ function _GetMapOrImage($rows, $url, $page_events, $options, $is_image_map, $pag
                     $ms = $event;
                     if ($ms > 0) {
                       $x = $x_scaler($ms);
-                      imageline($im, $x, $y1, $x, $y2, $color);
+                      if ($event_name == 'lcp') {
+                        imagedashedline($im, $x, $y1, $x, $y2, $color);
+                      } else {
+                        imageline($im, $x, $y1, $x, $y2, $color);
+                      }
                       if (!$is_thumbnail && $x < $width - 3) {
                         $x++;
-                        imageline($im, $x, $y1, $x, $y2, $color);
+                        if ($event_name == 'lcp') {
+                          imagedashedline($im, $x, $y1, $x, $y2, $color);
+                        } else {
+                          imageline($im, $x, $y1, $x, $y2, $color);
+                        }
                       }
                     }
                   }
                 }
             }
 
-            // Draw the performance data.
+            // Draw the layout shifts timings
+            if (isset($layout_shifts)) {
+              $layout_shift_color = GetColor($im, 255, 128, 0);
+              foreach ($layout_shifts as $shift_time) {
+                  if ($shift_time > 0 && $shift_time <= $max_ms) {
+                      $x = $x_scaler($shift_time);
+                      imagedashedline($im, $x, $top + $row_height + 5, $x, $top + $height - 1, $layout_shift_color);
+                      if (!$is_thumbnail) {
+                        $x++;
+                        imagedashedline($im, $x, $top + $row_height + 5, $x, $top + $height - 1, $layout_shift_color);
+                      }
+                  }
+              }
+          }
+
+          // Draw the performance data.
             if (isset($perfs) && is_array($perfs)) {
               foreach ($perfs as $p) {
                 $x1 = $x_scaler(0);
@@ -795,9 +832,12 @@ function _GetMapOrImage($rows, $url, $page_events, $options, $is_image_map, $pag
         // Draw the request labels.
         foreach ($rows as $row) {
             $is_secure = $row['is_secure'];
+            $contentType = $row['contentType'];
             $request_label = $row['label'];
             $text_color = $black;
-            if (isset($document_url) && isset($row['requests']) && count($row['requests']) == 1 && isset($row['requests'][0]['documentURL']) && $row['requests'][0]['documentURL'] != $document_url) {
+            if (isset($document_url) && isset($row['requests']) && count($row['requests']) == 1 && 
+                    isset($row['requests'][0]['documentURL']) && 
+                    _BaseDocumentUrl($row['requests'][0]['documentURL']) != _BaseDocumentUrl($document_url)) {
                 $text_color = $alt_text_color;
             }
             $y = $top + $row['y1'] + 1;
@@ -807,11 +847,11 @@ function _GetMapOrImage($rows, $url, $page_events, $options, $is_image_map, $pag
             } else {
                 $label_x = $column_x + intval($font_width / 2);
                 $label_max_len = $max_len - 1;
-                if ($is_secure && $show_labels) {
-                    $lock_width = 12;
-                    DrawLock($im, $label_x, $y, $lock_width, $row_height);
-                    $label_x += $lock_width;
-                    $label_max_len -= $lock_width / $font_width;
+                if (!$is_secure && $show_labels && !($contentType == "application/ocsp-response")) {
+                    $icon_width = 17;
+                    DrawNotSecure($im, $label_x, $y, $icon_width, $row_height);
+                    $label_x += $icon_width;
+                    $label_max_len -= $icon_width / $font_width;
                 }
                 imagestring($im, $font, $label_x, $y,
                             FitText($request_label, $label_max_len), $text_color);
@@ -994,6 +1034,10 @@ class XScaler
     public function __invoke($value) {
         return $this->value_max ? $this->x_start + (int)((double)$this->x_width * (double)$value /
                                       $this->value_max) : 0;
+    }
+
+    public function bar_width_ms() {
+      return ((float)$this->value_max / (float)$this->x_width);
     }
 }
 
@@ -1313,10 +1357,23 @@ function GetBars($request, $x_scaler, $y1, $y2,
     $js_height = max(2, intval($bar_height * 0.5));
     $js_y1 = $y1 + intval(($bar_height - $js_height) / 2);
     $js_y2 = $js_y1 + $js_height - 1;
+    $bar_width_ms = $x_scaler->bar_width_ms();
     foreach($request['js_timing'] as $times) {
+      // Calculate the bar hight if the width is less than 1 pixel
+      $duration = $times[1] - $times[0];
+      $bar_y1 = $js_y1;
+      $bar_y2 = $js_y2;
+      if ($bar_width_ms > 0 && $duration < $bar_width_ms) {
+        $portion = $duration / $bar_width_ms;
+        $original_bar_height = $bar_y2 - $bar_y1;
+        $js_bar_height = max((int)($original_bar_height * $portion), 0);
+        $bar_y1 += (int)(($original_bar_height - $js_bar_height) / 2);
+        $bar_y2 = $bar_y1 + $js_bar_height;
+      }
+
       $bars[] = array(
           $x_scaler($times[0]), $x_scaler($times[1]),
-          $js_y1, $js_y2,
+          $bar_y1, $bar_y2,
           $request['colors']['js'],
           false);
     }
@@ -1330,6 +1387,7 @@ function GetBars($request, $x_scaler, $y1, $y2,
 function AddBarIfValid(&$bars, $key, $start_key, $end_key, $request, $x_scaler, $y1, $y2) {
     if (array_key_exists($start_key, $request) &&
         array_key_exists($end_key, $request) &&
+        $request[$start_key] >= 0 &&
         $request[$end_key] > 0) {
         $x1 = $x_scaler($request[$start_key]);
         $x2 = $x_scaler($request[$end_key]);
@@ -1353,8 +1411,6 @@ function InsertWaterfall($url, $requests, $id, $run, $cached, $page_data, $water
 }
 
 function CreateWaterfallHtml($url, $requests, $id, $run, $cached, $page_data, $waterfall_options = '', $step = 1) {
-    global $settings;
-
     // create the image map (this is for fallback when JavaScript isn't enabled
     // but also gives us the position for each request)
     $out = '<map name="waterfall_map_step' . $step . '">';
@@ -1366,11 +1422,11 @@ function CreateWaterfallHtml($url, $requests, $id, $run, $cached, $page_data, $w
         'path' => './' . GetTestPath($id),
         'step_id' => $step,
         'run_id' => $run,
-        'is_cached' => @$_GET['cached'],
+        'is_cached' => isset($_GET['cached']) ? @$_GET['cached'] : 0,
         'use_cpu' => true,
         'show_labels' => true,
         'is_mime' => $is_mime,
-        'width' => 930
+        'width' => 1012
         );
     $rows = GetRequestRows($requests, false);
     $map = GetWaterfallMap($rows, $url, $options, $page_data);
@@ -1439,11 +1495,12 @@ EOT;
     $out .= '</div>'; // container
 
     // script support
+    $nolinks = GetSetting('nolinks', 0);
     $out .= "<script type=\"text/javascript\">\n";
     $out .= "if (typeof wptRequestCount == 'undefined') var wptRequestCount = {};\n";
     $out .= "if (typeof wptRequestData == 'undefined') var wptRequestData = {};\n";
     $out .= "if (typeof wptPageData == 'undefined') var wptPageData = {};\n";
-    $out .= "if (typeof wptNoLinks == 'undefined') var wptNoLinks={$settings['nolinks']};\n";
+    $out .= "if (typeof wptNoLinks == 'undefined') var wptNoLinks=$nolinks;\n";
     $out .= "wptRequestCount['step$step']=" . count($requests) . ";\n";
     $request_data = json_encode($requests, 0, 1024);
     if (!isset($request_data) || $request_data === false || !is_string($request_data) || strlen($request_data) < 3) {
@@ -1654,9 +1711,12 @@ function AddRequestScriptTimings(&$requests, $script_timings_file) {
         isset($timings[$timings['main_thread']]) &&
         is_array($timings[$timings['main_thread']])) {
       $js_timing = $timings[$timings['main_thread']];
+      $used = array();
       foreach ($requests as &$request) {
         if (isset($request['full_url']) &&
+            !isset($used[$request['full_url']]) &&
             isset($js_timing[$request['full_url']])) {
+          $used[$request['full_url']] = true;
           $request['js_timing'] = array();
           foreach ($script_events as $script_event) {
             if (isset($js_timing[$request['full_url']][$script_event])) {

@@ -1,12 +1,14 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 /**
 * Determine the colors to use for each request
 */
 function GetRequestColors($content_type, $thumbnail, $is_mime,
                           $is_state = false, $url = null) {
-    global $settings;
-    if (@$settings['new_colors']) {
+    if (GetSetting('new_colors')) {
         // new color scheme (proposed by Steve Souders)
         $colors = array(
             'error'    => array(204,0,0),
@@ -125,7 +127,7 @@ function ContentType($mime, $url = null) {
           $content_type = 'css';
         elseif ($ext == '.htm' || $ext == '.html')
           $content_type = 'html';
-        elseif ($ext == '.png' || $ext == '.gif' || $ext == '.jpg' || $ext == '.avif')
+        elseif ($ext == '.png' || $ext == '.gif' || $ext == '.jpg' || $ext == '.avif' || $ext == '.jxl')
           $content_type = 'image';
         elseif ($ext == '.swf')
           $content_type = 'flash';

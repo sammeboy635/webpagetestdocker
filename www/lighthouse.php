@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 if(array_key_exists("HTTP_IF_MODIFIED_SINCE",$_SERVER) && strlen(trim($_SERVER['HTTP_IF_MODIFIED_SINCE']))) {
   header("HTTP/1.0 304 Not Modified");
 } else {
@@ -11,7 +14,7 @@ if(array_key_exists("HTTP_IF_MODIFIED_SINCE",$_SERVER) && strlen(trim($_SERVER['
       if (is_file($filePath)) {
         $ok = true;
         header('Last-Modified: ' . gmdate('r'));
-        header('Cache-Control: public,max-age=31536000');
+        header('Cache-Control: public,max-age=31536000', true);
         header('Content-type: application/json');
         gz_readfile_chunked($filePath);
       }
@@ -31,7 +34,7 @@ if(array_key_exists("HTTP_IF_MODIFIED_SINCE",$_SERVER) && strlen(trim($_SERVER['
 
         // Cache for a year
         header('Last-Modified: ' . gmdate('r'));
-        header('Cache-Control: public,max-age=31536000');
+        header('Cache-Control: public,max-age=31536000', true);
         header('Content-type: text/html');
         $lighthouseTrace = "$testPath/lighthouse_trace.json";
         if (gz_is_file($lighthouseTrace)) {

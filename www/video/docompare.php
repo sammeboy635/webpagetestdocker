@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 chdir('..');
 include 'common.inc';
 
@@ -7,11 +10,14 @@ $labels = $_REQUEST['label'];
 $ids = array();
 $ip = $_SERVER['REMOTE_ADDR'];
 $key = '';
-$keys = parse_ini_file('./settings/keys.ini', true);
-if( $keys && isset($keys['server']) && isset($keys['server']['key']) )
-  $key = trim($keys['server']['key']);
+$keys_file = __DIR__ . '/../settings/keys.ini';
+if (file_exists(__DIR__ . '/../settings/common/keys.ini'))
+  $keys_file = __DIR__ . '/../settings/common/keys.ini';
+if (file_exists(__DIR__ . '/../settings/server/keys.ini'))
+  $keys_file = __DIR__ . '/../settings/server/keys.ini';
+$key = GetServerKey();
 $headless = false;
-if (array_key_exists('headless', $settings) && $settings['headless']) {
+if (GetSetting('headless')) {
     $headless = true;
 }
 
@@ -93,8 +99,12 @@ function SubmitTest($url, $label, $key)
     $testUrl .= 'f=xml&priority=2&runs=3&video=1&mv=1&fvonly=1&url=' . urlencode($url);
     if( $label && strlen($label) )
         $testUrl .= '&label=' . urlencode($label);
-    if (isset($_REQUEST['profile']) && strlen($_REQUEST['profile']) && is_file(__DIR__ . '/../settings/profiles.ini'))
+    if (isset($_REQUEST['profile']) && strlen($_REQUEST['profile']) && 
+        (file_exists(__DIR__ . '/../settings/profiles.ini') ||
+         file_exists(__DIR__ . '/../settings/common/profiles.ini') ||
+         file_exists(__DIR__ . '/../settings/server/profiles.ini'))) {
         $testUrl .= "&profile={$_REQUEST['profile']}";
+    }
     if( $ip )
         $testUrl .= "&addr=$ip";
     if( $uid )
@@ -103,7 +113,11 @@ function SubmitTest($url, $label, $key)
         $testUrl .= '&user=' . urlencode($uid);
     if( strlen($key) )
         $testUrl .= '&k=' . urlencode($key);
-
+    $saml_cookie = GetSetting('saml_cookie', 'samlu');
+    if (isset($_COOKIE[$saml_cookie])) {
+      $testUrl .= '&samlu=' . urlencode($_COOKIE[$saml_cookie]);
+    }
+      
     // submit the request
     $result = simplexml_load_file($testUrl, 'SimpleXMLElement',LIBXML_NOERROR);
     if( $result && $result->data )
@@ -120,13 +134,12 @@ function DisplayError()
 {
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest - Visual Comparison</title>
         <?php $gaTemplate = 'Visual Comparison Error'; include ('head.inc'); ?>
     </head>
-    <body>
-        <div class="page">
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
             <?php
             $tab = null;
             $headerType = 'video';

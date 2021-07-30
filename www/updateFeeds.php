@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 if(extension_loaded('newrelic')) {
     newrelic_add_custom_tracer('UpdateFeeds');
 }
@@ -8,7 +11,12 @@ if(extension_loaded('newrelic')) {
 * 
 */
 function UpdateFeeds() {
-  if (is_file('./settings/feeds.inc')) {
+  $feed_file = __DIR__ . '/settings/feeds.inc';
+  if (file_exists(__DIR__ . '/settings/common/feeds.inc'))
+    $feed_file = __DIR__ . '/settings/common/feeds.inc';
+  if (file_exists(__DIR__ . '/settings/server/feeds.inc'))
+    $feed_file = __DIR__ . '/settings/server/feeds.inc';
+  if (file_exists($feed_file)) {
     if( !is_dir('./tmp') )
         mkdir('./tmp', 0777);
 
@@ -16,7 +24,7 @@ function UpdateFeeds() {
     $lock = Lock("Update Feeds", false);
     if (isset($lock)) {
       // load the list of feeds
-      require_once('./settings/feeds.inc');
+      require_once($feed_file);
       require_once('./lib/simplepie.inc');
 
       // loop through and update each one
@@ -47,6 +55,8 @@ function UpdateFeeds() {
                 $feed->enable_cache(false);
                 $feed->init();
               }
+
+              $feed_image = $feed->get_image_url();
               
               foreach ($feed->get_items() as $item) {
                 $dateStr = $item->get_date(DATE_RSS);
@@ -71,12 +81,43 @@ function UpdateFeeds() {
                         $parts = parse_url($feedUrl);
                         $url = "{$parts['scheme']}://{$parts['host']}$url";
                       }
-                      $feedData[$category][$date] = array ( 
-                              'source' => $feedSource,
-                              'title' => $item->get_title(),
-                              'link' => $url,
-                              'date' => $dateStr
-                          );
+                      $entry = array ( 
+                        'source' => $feedSource,
+                        'title' => $item->get_title(),
+                        'desc' => $item->get_description(true),
+                        'link' => $url,
+                        'date' => $dateStr
+                      );
+                      $thumbnail = null;
+                      // See if there is an explicit image
+                      if ($enclosure = $item->get_enclosure()) {
+                        $thumbnail = $enclosure->get_thumbnail();
+                      }
+                      // Try grabbing the first image from the content
+                      if (!$thumbnail) {
+                        $content = $item->get_content();
+                        if ($content) {
+                          $doc = new DOMDocument();
+                          if ($doc->loadHTML($content)) {
+                            $doc->preserveWhiteSpace = false;
+                            $images = $doc->getElementsByTagName('img');
+                            foreach ($images as $image) {
+                              $thumbnail = $image->getAttribute('src');
+                              if ($thumbnail) {
+                                break;
+                              }
+                            }
+                          }
+                        }
+                      }
+                      // Fall back to the icon for the feed if there is one
+                      if (!$thumbnail && $feed_image) {
+                        $thumbnail = $feed_image;
+                      }
+                      if ($thumbnail) {
+                        $entry['thumbnail'] = $thumbnail;
+                      }
+                      $feedData[$category][$date] = $entry;
                     }
                   }
                 }

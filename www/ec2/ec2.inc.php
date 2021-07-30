@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 require_once('./common_lib.inc');
 require_once('./lib/aws/aws-autoloader.php');
 
@@ -566,6 +569,14 @@ function EC2_LaunchInstance($region, $ami, $size, $user_data, $loc) {
         'InstanceType' => $size,
         'UserData' => base64_encode ( $user_data )
       );
+
+      // add/modify IAM instance profile(s) if present in config
+      $iamInstanceProfile = GetSetting('EC2.iamInstanceProfile');
+      if ($iamInstanceProfile) {
+        $ec2_options['IamInstanceProfile'] = array(
+          'Name' => $iamInstanceProfile
+        );
+      }
 
       //add/modify the SecurityGroupIds if present in config
       $secGroups = GetSetting("EC2.$region.securityGroup");

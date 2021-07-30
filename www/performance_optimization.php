@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include __DIR__ . '/common.inc';
 require_once __DIR__ . '/include/TestInfo.php';
 require_once __DIR__ . '/include/TestRunResults.php';
@@ -15,7 +18,7 @@ $testRunResults = TestRunResults::fromFiles($testInfo, $run, $cached, $step);
 $isMultistep = $testRunResults->countSteps() > 1;
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest Optimization Check Results<?php echo $testLabel; ?></title>
         <?php $gaTemplate = 'Optimization Check'; include ('head.inc'); ?>
@@ -106,11 +109,10 @@ $isMultistep = $testRunResults->countSteps() > 1;
             ?>
         </style>
     </head>
-    <body>
-        <div class="page">
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
             <?php
             $tab = 'Test Result';
-            $subtab = 'Performance Review';
+            $subtab = 'Performance';
             include 'header.inc';
 
             if ($isMultistep) {
@@ -153,7 +155,6 @@ $isMultistep = $testRunResults->countSteps() > 1;
                 </table>
             </div>
             <br>
-            <?php include('./ads/optimization_middle.inc'); ?>
             <br>
             <?php
                 // still multistep
@@ -162,21 +163,18 @@ $isMultistep = $testRunResults->countSteps() > 1;
             } else {
                 // singlestep
                 $snippet = new PerformanceOptimizationHtmlSnippet($testInfo, $testRunResults->getStepResult(1));
-                $snippet->setAdsFile(__DIR__ . '/ads/optimization_middle.inc');
                 echo $snippet->create();
             }
             ?>
 
             <?php
                 echo '<p></p><br>';
-                include('./ads/optimization_bottom.inc');
                 echo '<br>';
-                dumpOptimizationGlossary($settings);
+                dumpOptimizationGlossary();
             ?>
-
+    </div>
             <?php include('footer.inc'); ?>
         </div>
-        <a href="#top" id="back_to_top">Back to top</a>
 
         <!--Load the AJAX API-->
         <?php

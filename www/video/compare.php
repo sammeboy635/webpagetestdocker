@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 require_once(__DIR__ . '/../util.inc');
 if( !isset($_REQUEST['tests']) && isset($_REQUEST['t']) )
 {
@@ -30,10 +33,16 @@ else
     chdir('..');
     include 'common.inc';
     require_once('page_data.inc');
+    //
+    require_once('./include/TestInfo.php');
+    require_once('./include/TestResults.php');
     include 'video/filmstrip.inc.php';  // include the common php shared across the filmstrip code
     require_once('object_detail.inc');
     require_once('waterfall.inc');
-
+    //
+    $testPath = GetTestPath($tests[0]['id']);
+    $testInfo = TestInfo::fromFiles($testPath);
+    $testResults = TestResults::fromFiles($testInfo);
     $page_keywords = array('Video','comparison','WebPageTest','Website Speed Test');
     $page_description = "Visual comparison of multiple websites with a side-by-side video and filmstrip view of the user experience.";
 
@@ -63,7 +72,7 @@ else
         $title .= ' - ' . $labels;
     ?>
     <!DOCTYPE html>
-    <html>
+    <html lang="en-us">
         <head>
             <title>WebPageTest - Visual Comparison</title>
             <?php
@@ -101,6 +110,9 @@ else
                     margin-right: auto;
                     padding-right: 100vw;
                 }
+                #video td{
+                    vertical-align: top;
+                }
                 #videoDiv
                 {
                     overflow-y: hidden;
@@ -119,16 +131,18 @@ else
                         position: sticky;
                         top: 0;
                         z-index: 5;
-                        <?php
-                            echo "background: #$bgcolor;\n";
-                        ?>
+                        
                     <?php
                     }
                     ?>
+                    <?php
+                            echo "background: #$bgcolor;\n";
+                            echo "color: #$color;\n"
+                        ?>
                     table-layout: fixed;
                     margin-left: auto;
                     margin-right: auto;
-                    width: 99%;
+                    width: 100%;
                 }
                 #videoContainer td
                 {
@@ -165,13 +179,14 @@ else
                 .pagelink,
                 .pagelinks a
                 {
-                    text-decoration: none;
                     <?php
                         echo "color: #$color;\n"
                     ?>
                     word-wrap: break-word;
+                    text-decoration: none;
+
                 }
-                .thumb{ border: none; }
+                .thumb{ border: 3px solid #000; }
                 .thumbChanged{border: 3px solid #FFC233;}
                 .thumbLCP{border: 3px solid #FF0000;}
                 .thumbLayoutShifted{border-style: dotted;}
@@ -264,10 +279,34 @@ else
                     padding: 5px;
                     width: 100%;
                 }
+                .max-shift-window{
+                    color: #FFC233;
+                    font-weight: normal;
+                }
                 div.compare-graph {margin:20px 0; width:900px; height:600px;margin-left:auto; margin-right:auto;}
                 div.compare-graph-progress {margin:20px 0; width:900px; height:400px;margin-left:auto; margin-right:auto;}
                 div.compare-graph-timings {margin:20px 0; width:900px; height:900px;margin-left:auto; margin-right:auto;}
                 div.compare-graph-cls {margin:20px 0; width:900px; height:200px;margin-left:auto; margin-right:auto;}
+                .compare footer a, .compare-all-link{
+                    <?php
+                    echo "color: #$color;\n";
+                    ?>
+                    text-decoration: underline;
+                }
+                .compare-all-link{
+                    padding: 5px;
+                    background: #1151bb;
+                    color: #fff;
+                    text-decoration: none;
+                    margin: .5em 5px;
+                    padding: 0.6875em 2.625em;
+                    border-radius: 4px;
+                    font-size: .9em;
+                    display: inline-block;
+                }
+                .compare-all-link:hover {
+                    background: #296ee1;
+                }
                 <?php
                 include "waterfall.css";
                 if (defined('EMBED')) {
@@ -284,7 +323,7 @@ else
                 <?php
                 }
                 ?>
-                div.waterfall-container {top: -2em; width:930px; margin: 0 auto;}
+                div.waterfall-container {top: -2em; width:1012px; margin: 0 auto;}
                 <?php
                 if (array_key_exists('sticky', $_GET) && strlen($_GET['sticky'])) {
                 ?>
@@ -302,8 +341,7 @@ else
                 ?>
             </style>
         </head>
-        <body>
-            <div class="page-wide">
+        <body class="compare<?php if ($COMPACT_MODE) {echo ' compact';} ?>">
                 <?php
                 $tab = 'Test Result';
                 $nosubheader = true;
@@ -317,15 +355,29 @@ else
                     if (isset($location) && strlen($location)) {
                         echo "<div id=\"location\">Tested From: $location</div>";
                     }
+                    //build out an expanded link
+                    if ($testResults->countRuns() > 1 && count($tests) == 1) {
+                        $link = '/video/compare.php?tests=';
+                        $cnt = 1;
+                        do {
+                            $link .= $tests[0]['id'] . '-r:' . $cnt . '-c:0';
+                            if ($tests[0]['step']) {
+                                $link .= '-s:' . $test['step'];
+                            }
+                            $link .= ',';
+                            $cnt++;
+                        } while ($cnt <= $testResults->countRuns());
+                        echo '<a class="compare-all-link" href="' . substr($link,0,-1) . '">Compare all runs</a>';
+                    }
                     ScreenShotTable();
                     DisplayGraphs();
                 } else {
                     DisplayStatus();
                 }
                 ?>
-
                 <?php include('footer.inc'); ?>
-            </div>
+                </div>
+                </div>
 
             <script type="text/javascript">
                 function ShowAdvanced()
@@ -349,7 +401,7 @@ else
                       $padding = 30;
                     echo "var padLeft = $padding;\n";
                     ?>
-                    var marker = parseInt(padLeft + ((position / width) * (930 - padLeft)));
+                    var marker = parseInt(padLeft + ((position / width) * (1012 - padLeft)));
                     $('.waterfall_marker').css('left', marker + 'px');
                 }
                 UpdateScrollPosition();
@@ -377,18 +429,29 @@ function ScreenShotTable()
     global $color;
     global $bgcolor;
     global $supports60fps;
+    global $location;
+    $has_layout_shifts = false;
     $endTime = 'visual';
     if( array_key_exists('end', $_REQUEST) && strlen($_REQUEST['end']) )
         $endTime = htmlspecialchars(trim($_REQUEST['end']));
+    
+    $show_shifts = false;
+    if (isset($_REQUEST['highlightCLS']) && $_REQUEST['highlightCLS'])
+        $show_shifts = true;
 
+    $show_lcp = false;
+    if (isset($_REQUEST['highlightLCP']) && $_REQUEST['highlightLCP'])
+        $show_lcp = true;
+    
     $filmstrip_end_time = 0;
     if( count($tests) )
     {
-        // figure out how many columns there are
+        // figure out how many columns there are and the maximum thumbnail size
         $end = 0;
-        foreach( $tests as &$test )
+        foreach( $tests as &$test ) {
             if( $test['video']['end'] > $end )
                 $end = $test['video']['end'];
+        }
 
         if (!defined('EMBED')) {
             echo '<br>';
@@ -458,17 +521,60 @@ function ScreenShotTable()
             if (isset($test['stepResult']) && is_a($test['stepResult'], "TestStepResult")) {
                 $lcp = $test['stepResult']->getMetric('chromeUserTiming.LargestContentfulPaint');
             }
+            $cls = 0;
             $shifts = array();
+            $viewport = null;
+            $lcp_events = array();
+            $has_lcp_rect = false;
+            $shiftWindows = array();
+            $maxWindow = null;
+
             if (isset($test['stepResult']) && is_a($test['stepResult'], "TestStepResult")) {
                 $layout_shifts = $test['stepResult']->getMetric('LayoutShifts');
+                $cls = $test['stepResult']->getMetric('chromeUserTiming.CumulativeLayoutShift');
+                $viewport = $test['stepResult']->getMetric('viewport');
                 if (isset($layout_shifts) && is_array($layout_shifts) && count($layout_shifts)) {
                     foreach($layout_shifts as $shift) {
                         if (isset($shift['time'])) {
-                            $shifts[] = $shift['time'];
+                            $shifts[] = $shift;
+                        }
+                        if (isset($shift['shift_window_num'])) {
+                            if (isset($shiftWindows[$shift['shift_window_num']])) {
+                                $shiftWindows[$shift['shift_window_num']] = max($shiftWindows[$shift['shift_window_num']], $shift['window_score']);
+                            } else {
+                                $shiftWindows[$shift['shift_window_num']] = $shift['window_score'];
+                            }
                         }
                     }
+                    $maxWindow = array_keys($shiftWindows, max($shiftWindows))[0];
                 }
-                asort($shifts);
+                usort($shifts, function($a, $b){
+                    return $a['time'] - $b['time'];
+                });
+                if (isset($lcp)) {
+                    $lcp_time = $lcp;
+                    $paint_events = $test['stepResult']->getMetric('largestPaints');
+                    if (isset($paint_events) && is_array($paint_events) && count($paint_events)) {
+                        foreach($paint_events as $paint) {
+                            if (isset($paint['event']) &&
+                                $paint['event'] == 'LargestContentfulPaint' &&
+                                isset($paint['time']) &&
+                                isset($paint['element']['boundingRect'])) {
+                                if ($paint['time'] == $lcp) {
+                                    $has_lcp_rect = true;
+                                }
+                                $lcp_events[] = array('time' => $paint['time'],
+                                                      'top' => $paint['element']['boundingRect']['y'],
+                                                      'left' => $paint['element']['boundingRect']['x'],
+                                                      'width' => $paint['element']['boundingRect']['width'],
+                                                      'height' => $paint['element']['boundingRect']['height']);
+                            }
+                        }
+                        usort($lcp_events, function($a, $b){
+                            return $a['time'] - $b['time'];
+                        });
+                    }
+                }
             }
 
             // figure out the height of the image
@@ -497,18 +603,29 @@ function ScreenShotTable()
                 $ms = $frameCount * $interval;
                 // find the closest video frame <= the target time
                 $frame_ms = null;
+                $last_frame = null;
                 if (isset($test['video']['frames']) && is_array($test['video']['frames']) && count($test['video']['frames'])) {
                   foreach ($test['video']['frames'] as $frameTime => $file) {
                     if ($frameTime <= $ms && (!isset($frame_ms) || $frameTime > $frame_ms))
                       $frame_ms = $frameTime;
                   }
+                  $last_frame = end($test['video']['frames']);
+                  reset($test['video']['frames']);
                 }
                 $path = null;
-                if (isset($frame_ms))
+                $is_last_frame = false;
+                if (isset($frame_ms)) {
                   $path = $test['video']['frames'][$frame_ms];
+                  if ($path == $last_frame) {
+                    $is_last_frame = true;
+                  }
+                }
                 if (array_key_exists('frame_progress', $test['video']) &&
                     array_key_exists($frame_ms, $test['video']['frame_progress']))
                   $progress = $test['video']['frame_progress'][$frame_ms];
+                $label = $progress;
+                if (isset($label))
+                    $label = "$label%";
 
                 if( !isset($lastThumb) )
                     $lastThumb = $path;
@@ -520,18 +637,92 @@ function ScreenShotTable()
                     echo "<a href=\"/$imgPath\">";
                     echo "<img title=\"" . htmlspecialchars($test['name']) . "\"";
                     $class = 'thumb';
+                    $rects = null;
+                    $lcp_candidate_rects = null;
+                    $lcp_rects = null;
+                    $shift_amount = 0.0;
+                    $shift_window = 0;
+                    $changed = false;
                     if ($lastThumb != $path) {
                         if( !$firstFrame || $frameCount < $firstFrame )
                             $firstFrame = $frameCount;
                         $class = 'thumbChanged';
+                        $changed = true;
                         if (isset($lcp) && $ms >= $lcp) {
                             $class = 'thumbLCP';
                             $lcp = null;
                         }
-                        if (count($shifts) && $ms > $shifts[0]) {
+                    }
+                    if ($changed || $is_last_frame) {
+                        if (count($shifts) && $ms > $shifts[0]['time']) {
                             $class .= ' thumbLayoutShifted';
-                            while(count($shifts) && $ms > $shifts[0]) {
-                                array_shift($shifts);
+                            while(count($shifts) && $ms > $shifts[0]['time']) {
+                                $shift = array_shift($shifts);
+                                if (isset($shift['score'])) {
+                                    $shift_amount += $shift['score'];
+                                }
+                                if (isset($shift['shift_window_num'])) {
+                                    $shift_window = $shift['shift_window_num'];
+                                }
+                                if (isset($viewport) &&
+                                        isset($viewport['width']) &&
+                                        $viewport['width'] > 0 &&
+                                        isset($viewport['height']) &&
+                                        $viewport['height'] > 0 &&
+                                        isset($shift['rects']) &&
+                                        is_array($shift['rects']) &&
+                                        count($shift['rects']) &&
+                                        isset($shift['score']) &&
+                                        $shift['score'] > 0) {
+                                    $has_layout_shifts = true;
+                                    // Figure out the x,y,width,height as a fraction of the viewport (3 decimal places as an integer)
+                                    foreach($shift['rects'] as $rect) {
+                                        if (is_array($rect) && count($rect) == 4) {
+                                            $shift_x = (int)(($rect[0] * 1000) / $viewport['width']);
+                                            $shift_y = (int)(($rect[1] * 1000) / $viewport['height']);
+                                            $shift_width = (int)(($rect[2] * 1000) / $viewport['width']);
+                                            $shift_height = (int)(($rect[3] * 1000) / $viewport['height']);
+                                            if ($shift_width > 0 && $shift_height > 0) {
+                                                if (isset($rects)) {
+                                                    $rects .= ',';
+                                                } else {
+                                                    $rects = '';
+                                                }
+                                                $rects .= "$shift_x.$shift_y.$shift_width.$shift_height";
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (isset($viewport) &&
+                                isset($viewport['width']) &&
+                                $viewport['width'] > 0 &&
+                                isset($viewport['height']) &&
+                                $viewport['height'] > 0) {
+                            while(count($lcp_events) && $ms > $lcp_events[0]['time']) {
+                                $lcp_event = array_shift($lcp_events);
+                                $lcp_x = (int)(($lcp_event['left'] * 1000) / $viewport['width']);
+                                $lcp_y = (int)(($lcp_event['top'] * 1000) / $viewport['height']);
+                                $lcp_width = (int)(($lcp_event['width'] * 1000) / $viewport['width']);
+                                $lcp_height = (int)(($lcp_event['height'] * 1000) / $viewport['height']);
+                                if ($lcp_width > 0 && $lcp_height > 0) {
+                                    if ($lcp_event['time'] == $lcp_time) {
+                                        if (isset($lcp_rects)) {
+                                            $lcp_rects .= ',';
+                                        } else {
+                                            $lcp_rects = '';
+                                        }
+                                        $lcp_rects .= "$lcp_x.$lcp_y.$lcp_width.$lcp_height";
+                                    } else {
+                                        if (isset($lcp_candidate_rects)) {
+                                            $lcp_candidate_rects .= ',';
+                                        } else {
+                                            $lcp_candidate_rects = '';
+                                        }
+                                        $lcp_candidate_rects .= "$lcp_x.$lcp_y.$lcp_width.$lcp_height";
+                                    }
+                                }
                             }
                         }
                     }
@@ -539,10 +730,43 @@ function ScreenShotTable()
                     echo " width=\"$width\"";
                     if( $height )
                         echo " height=\"$height\"";
-                    $imgUrl = $urlGenerator->videoFrameThumbnail($path, $thumbSize);
+                    $options = null;
+                    if ($show_shifts && isset($rects)) {
+                        $overlay_color = 'FF0000AA'; // Red with 50% transparency (transparency is ignored for the border)
+                        $options = "rects=$overlay_color-$rects";
+                    }
+                    if ($show_lcp && isset($lcp_candidate_rects)) {
+                        $overlay_color = '0000FFAA'; // Blue with 50% transparency (transparency is ignored for the border)
+                        if (isset($options))
+                            $options .= '|';
+                        else
+                            $options = 'rects=';
+                        $options .= "$overlay_color-$lcp_candidate_rects";
+                    }
+                    if ($show_lcp && isset($lcp_rects)) {
+                        $overlay_color = '00FF00AA'; // Green with 50% transparency (transparency is ignored for the border)
+                        if (isset($options))
+                            $options .= '|';
+                        else
+                            $options = 'rects=';
+                        $options .= "$overlay_color-$lcp_rects";
+                    }
+                    $imgUrl = $urlGenerator->videoFrameThumbnail($path, $thumbSize, $options);
                     echo " src=\"$imgUrl\"></a>";
-                    if (isset($progress))
-                        echo "<br>$progress%";
+
+                    if ($show_shifts) {
+                        $label = "&nbsp;";
+                        if (isset($shift_amount) && number_format($shift_amount, 3, ".", "") > 0.0 && isset($shift_window) && number_format($shiftWindows[$shift_window], 3, ".", "") > 0.0) {
+                            
+                            $label = number_format($shift_amount, 3, ".", "") . ' / ' . number_format($shiftWindows[$shift_window], 3, ".", "");
+                            $label .= '<br>Window: ' . $shift_window;
+                            if ($shift_window == $maxWindow) {
+                                $label = '<b class="max-shift-window">' . $label . '*</b>';
+                            }
+                        }
+                    }
+                    if (isset($label))
+                        echo "<br>$label";
                     $lastThumb = $path;
                 }
                 $frameCount++;
@@ -558,7 +782,7 @@ function ScreenShotTable()
         // end of the container table
         echo "</td></tr></table>\n";
 
-        echo '<form id="createForm" name="create" method="get" action="/video/create.php">';
+        echo '<form id="createForm" name="create" method="get" action="/video/view.php">';
         echo "<input type=\"hidden\" name=\"end\" value=\"$endTime\">";
         echo '<input type="hidden" name="tests" value="' . htmlspecialchars($_REQUEST['tests']) . '">';
         echo "<input type=\"hidden\" name=\"bg\" value=\"$bgcolor\">";
@@ -567,11 +791,25 @@ function ScreenShotTable()
             echo '<input type="hidden" name="labelHeight" value="' . htmlspecialchars($_REQUEST['labelHeight']) . '">"';
         if (isset($_REQUEST['timeHeight']) && is_numeric($_REQUEST['timeHeight']))
             echo '<input type="hidden" name="timeHeight" value="' . htmlspecialchars($_REQUEST['timeHeight']) . '">"';
+        if (isset($location) && strlen($location)) {
+            echo '<input type="hidden" name="loc" value="' . htmlspecialchars(strip_tags($location)) . '">';
+        }
         echo '<div class="page">';
+        ?>
+        <ul class="key">
+            <?php if (isset($_REQUEST['highlightCLS']) && $_REQUEST['highlightCLS']) {?>
+            <li class="max-shift-window full">*Layout shift occurs in the maximum shift window</li>
+            <?php } ?>
+            <li><b class="thumbChanged"></b>A visual change occurred in the frame.</li>
+            <li><b class="thumbLCP"></b>Largest Contentful Paint occurred in the frame.</li>
+            <li><b class="thumbChanged thumbLayoutShifted"></b>A visual change and a Layout Shift occurred in the frame.</li>
+            <li><b class="thumbLCP thumbLayoutShifted"></b>Largest Contentful Paint and a Layout Shift occurred in the frame.</li>
+        </ul>
+        <?php
         echo "<div id=\"image\">";
         echo "<a id=\"export\" class=\"pagelink\" href=\"filmstrip.php?tests=" . htmlspecialchars($_REQUEST['tests']) . "&thumbSize=$thumbSize&ival=$interval&end=$endTime&text=$color&bg=$bgcolor\">Export filmstrip as an image...</a>";
         echo "</div>";
-        echo '<div id="bottom"><input type="checkbox" name="slow" value="1"> Slow Motion<br><br>';
+        echo '<div id="bottom"><input type="checkbox" id="slow" name="slow" value="1"> <label for="slow">Slow Motion</label><br><br>';
         echo "<input id=\"SubmitBtn\" type=\"submit\" value=\"Create Video\">";
         echo '<br><br><a class="pagelink" href="javascript:ShowAdvanced()">Advanced customization options...</a>';
         echo "</div></div></form>";
@@ -583,74 +821,106 @@ function ScreenShotTable()
             <?php
                 echo "<input type=\"hidden\" name=\"tests\" value=\"" . htmlspecialchars($_REQUEST['tests']) . "\">\n";
             ?>
-                <table id="layoutTable">
-                    <tr><th>Thumbnail Size</th><th>Thumbnail Interval</th><th>Comparison Endpoint</th></th></tr>
+                <div id="filmstripOptions">
+                    <fieldset>
+                        <legend>Filmstrip Options</legend>
+                <?php
+                if ($has_layout_shifts) {
+                    $checked = '';
+                    if( isset($_REQUEST['highlightCLS']) && $_REQUEST['highlightCLS'] )
+                        $checked = ' checked=checked';
+                    echo "<input type=\"checkbox\" id=\"highlightCLS\" name=\"highlightCLS\" value=\"1\"$checked onclick=\"this.form.submit();\">";
+                    echo "<label for=\"highlightCLS\"> Highlight Layout Shifts</label><br>";
+                }
+                if ($has_lcp_rect) {
+                    $checked = '';
+                    if( isset($_REQUEST['highlightLCP']) && $_REQUEST['highlightLCP'] )
+                        $checked = ' checked=checked';
+                    echo "<input type=\"checkbox\" id=\"highlightLCP\" name=\"highlightLCP\" value=\"1\"$checked onclick=\"this.form.submit();\">";
+                    echo "<label for=\"highlightLCP\"> Highlight Largest Contentful Paints</label><br>";
+                }
+
+                $checked = '';
+                if( isset($_REQUEST['sticky']) && $_REQUEST['sticky'] )
+                    $checked = ' checked=checked';
+                echo "<input type=\"checkbox\" id=\"sticky\" name=\"sticky\" value=\"1\"$checked onclick=\"this.form.submit();\">";
+                echo "<label for=\"sticky\"> Make Filmstrip Sticky</label>";
+                
+                ?>
+                </fieldset>
                     <?php
                         // fill in the thumbnail size selection
-                        echo "<tr><td>";
+                        echo "<fieldset>";
+                        echo "<legend>Thumbnail Size</legend>";
                         $checked = '';
                         if( $thumbSize <= 100 )
                             $checked = ' checked=checked';
-                        echo "<input type=\"radio\" name=\"thumbSize\" value=\"100\"$checked onclick=\"this.form.submit();\"> Small<br>";
+                        echo "<input type=\"radio\" id=\"thumbSize100\" name=\"thumbSize\" value=\"100\"$checked onclick=\"this.form.submit();\"> <label for=\"thumbSize100\">Small</label><br>";
                         $checked = '';
                         if( $thumbSize <= 150 && $thumbSize > 100 )
                             $checked = ' checked=checked';
-                        echo "<input type=\"radio\" name=\"thumbSize\" value=\"150\"$checked onclick=\"this.form.submit();\"> Medium<br>";
+                        echo "<input type=\"radio\" id=\"thumbSize150\" name=\"thumbSize\" value=\"150\"$checked onclick=\"this.form.submit();\"> <label for=\"thumbSize150\">Medium</label><br>";
                         $checked = '';
-                        if( $thumbSize > 150 )
+                        if( $thumbSize <= 200 && $thumbSize > 150 )
                             $checked = ' checked=checked';
-                        echo "<input type=\"radio\" name=\"thumbSize\" value=\"200\"$checked onclick=\"this.form.submit();\"> Large";
-                        echo "</td>";
+                        echo "<input type=\"radio\" id=\"thumbSize200\" name=\"thumbSize\" value=\"200\"$checked onclick=\"this.form.submit();\"> <label for=\"thumbSize200\">Large</label><br>";
+                        $checked = '';
+                        if( $thumbSize > 200)
+                            $checked = ' checked=checked';
+                        echo "<input type=\"radio\" id=\"thumbSize600\" name=\"thumbSize\" value=\"600\"$checked onclick=\"this.form.submit();\"> <label for=\"thumbSize600\">Huge</label>";
+                        echo "</fieldset>";
 
                         // fill in the interval selection
-                        echo "<td>";
+                        echo "<fieldset>";
+                        echo "<legend>Thumbnail Interval</legend>";
                         if ($supports60fps) {
                           $checked = '';
                           if( $interval < 100 )
                               $checked = ' checked=checked';
-                          echo "<input type=\"radio\" name=\"ival\" value=\"16.67\"$checked onclick=\"this.form.submit();\"> 60 FPS<br>";
+                          echo "<input type=\"radio\" id=\"ival60fps\" name=\"ival\" value=\"16.67\"$checked onclick=\"this.form.submit();\"> <label for=\"ival60fps\">60 FPS</label><br>";
                         }
                         $checked = '';
                         if( ($supports60fps && $interval == 100) || (!$supports60fps && $interval < 500) )
                             $checked = ' checked=checked';
-                        echo "<input type=\"radio\" name=\"ival\" value=\"100\"$checked onclick=\"this.form.submit();\"> 0.1 sec<br>";
+                        echo "<input type=\"radio\" id=\"ival100\" name=\"ival\" value=\"100\"$checked onclick=\"this.form.submit();\"> <label for=\"ival100\">0.1 sec</label><br>";
                         $checked = '';
                         if( $interval == 500 )
                             $checked = ' checked=checked';
-                        echo "<input type=\"radio\" name=\"ival\" value=\"500\"$checked onclick=\"this.form.submit();\"> 0.5 sec<br>";
+                        echo "<input type=\"radio\" id=\"ival500\" name=\"ival\" value=\"500\"$checked onclick=\"this.form.submit();\"> <label for=\"ival500\">0.5 sec</label><br>";
                         $checked = '';
                         if( $interval == 1000 )
                             $checked = ' checked=checked';
-                        echo "<input type=\"radio\" name=\"ival\" value=\"1000\"$checked onclick=\"this.form.submit();\"> 1 sec<br>";
+                        echo "<input type=\"radio\" id=\"ival1000\" name=\"ival\" value=\"1000\"$checked onclick=\"this.form.submit();\"> <label for=\"ival1000\">1 sec</label><br>";
                         $checked = '';
                         if( $interval > 1000 )
                             $checked = ' checked=checked';
-                        echo "<input type=\"radio\" name=\"ival\" value=\"5000\"$checked onclick=\"this.form.submit();\"> 5 sec<br>";
-                        echo "</td>";
+                        echo "<input type=\"radio\" id=\"ival5000\" name=\"ival\" value=\"5000\"$checked onclick=\"this.form.submit();\"> <label for=\"ival5000\">5 sec</label><br>";
+                        echo "</fieldset>";
 
                         // fill in the endpoint selection
-                        echo "<td>";
+                        echo "<fieldset>";
+                        echo "<legend>Comparison Endpoint</legend>";
                         if( !strcasecmp($endTime, 'aft') )
                             $endTime = 'visual';
                         $checked = '';
                         if( !strcasecmp($endTime, 'visual') )
                             $checked = ' checked=checked';
-                        echo "<input type=\"radio\" name=\"end\" value=\"visual\"$checked onclick=\"this.form.submit();\"> Visually Complete<br>";
+                        echo "<input type=\"radio\" name=\"end\" id=\"endVisuallyComplete\" value=\"visual\"$checked onclick=\"this.form.submit();\"> <label for=\"endVisuallyComplete\">Visually Complete</label><br>";
                         $checked = '';
                         if( !strcasecmp($endTime, 'all') )
                             $checked = ' checked=checked';
-                        echo "<input type=\"radio\" name=\"end\" value=\"all\"$checked onclick=\"this.form.submit();\"> Last Change<br>";
+                        echo "<input type=\"radio\" name=\"end\" id=\"endLastChange\" value=\"all\"$checked onclick=\"this.form.submit();\"> <label for=\"endLastChange\">Last Change</label><br>";
                         $checked = '';
                         if( !strcasecmp($endTime, 'doc') )
                             $checked = ' checked=checked';
-                        echo "<input type=\"radio\" name=\"end\" value=\"doc\"$checked onclick=\"this.form.submit();\"> Document Complete<br>";
+                        echo "<input type=\"radio\" name=\"end\" id=\"endDocComplete\" value=\"doc\"$checked onclick=\"this.form.submit();\"> <label for=\"endDocComplete\">Document Complete</label><br>";
                         $checked = '';
                         if( !strcasecmp($endTime, 'full') )
                             $checked = ' checked=checked';
-                        echo "<input type=\"radio\" name=\"end\" value=\"full\"$checked onclick=\"this.form.submit();\"> Fully Loaded<br>";
-                        echo "</td></tr>";
+                        echo "<input type=\"radio\" name=\"end\" id=\"endFullyLoaded\" value=\"full\"$checked onclick=\"this.form.submit();\"> <label for=\"endFullyLoaded\">Fully Loaded</label><br>";
+                        echo "</fieldset>";
                     ?>
-                </table>
+                </div>
             </form>
         </div>
         <?php
@@ -786,16 +1056,6 @@ function DisplayGraphs() {
     foreach($tests as &$test) {
         $hasStepResult = array_key_exists('stepResult', $test) && is_a($test['stepResult'], "TestStepResult");
         if ($hasStepResult &&
-            !empty($test['stepResult']->getMetric('heroElements'))) {
-            foreach ($test['stepResult']->getMetric('heroElements') as $hero) {
-                $heroKey = "heroElementTimes.{$hero['name']}";
-
-                if (!isset($timeMetrics[$heroKey])) {
-                    $timeMetrics[$heroKey] = "Hero {$hero['name']}";
-                }
-            }
-        }
-        if ($hasStepResult &&
             !isset($timeMetrics['visualComplete85']) &&
             $test['stepResult']->getMetric('visualComplete85') > 0) {
             $timeMetrics['visualComplete85'] = "85% Visually Complete";
@@ -816,9 +1076,9 @@ function DisplayGraphs() {
             $timeMetrics['visualComplete99'] = "99% Visually Complete";
         }
         if ($hasStepResult &&
-            !isset($timeMetrics['chromeUserTiming.firstContentfulPaint']) &&
-            $test['stepResult']->getMetric('chromeUserTiming.firstContentfulPaint') > 0) {
-            $timeMetrics['chromeUserTiming.firstContentfulPaint'] = "First Contentful Paint";
+            !isset($timeMetrics['firstContentfulPaint']) &&
+            $test['stepResult']->getMetric('firstContentfulPaint') > 0) {
+            $timeMetrics['firstContentfulPaint'] = "First Contentful Paint";
         }
         if ($hasStepResult &&
             !isset($timeMetrics['chromeUserTiming.firstMeaningfulPaint']) &&
@@ -1003,7 +1263,8 @@ function DisplayGraphs() {
             }
             $row = 0;
             foreach($timeMetrics as $metric => $label) {
-              $metricKey = str_replace('.', '', $metric);
+              $filterOut = array('.', '-');
+              $metricKey = str_replace($filterOut, '', $metric);
               echo "var dataTimes$metricKey = new google.visualization.DataView(dataTimes);\n";
               echo "dataTimes$metricKey.setRows($row, $row);\n";
               $row++;

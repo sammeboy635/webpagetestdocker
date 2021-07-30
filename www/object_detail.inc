@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 require_once __DIR__ . '/devtools.inc.php';
 require_once __DIR__ . '/include/UrlGenerator.php';
 
@@ -37,12 +40,12 @@ function getRequestsForStep($localPaths, $rootUrlGenerator, &$has_secure_request
     $headers_file_name = $localPaths->headersFile();
     $bodies_file_name = $localPaths->bodiesFile();
     $script_timing_file_name = $localPaths->devtoolsScriptTimingFile();
-    $cache_version = 3;
+    $cache_version = 4;
     $cache_file = $localPaths->requestsCacheFile($cache_version);
     $devtools_request = $localPaths->devtoolsProcessedRequestsFile();
     $requests = null;
     $cached = true;
-    if (gz_is_file($cache_file)) {
+    if (gz_is_file($cache_file) && !isset($_REQUEST['recalculate'])) {
       $requests = json_decode(gz_file_get_contents($cache_file), true);
     } elseif (gz_is_file($devtools_request)) {
       GetDevToolsRequestsForStep($localPaths, $requests, $pageData);
@@ -82,7 +85,7 @@ function getRequestsForStep($localPaths, $rootUrlGenerator, &$has_secure_request
           if ($rootUrlGenerator) {
             if (isset($request['body_id']) && strlen($request['body_id'])) {
               $request['body_url'] = $rootUrlGenerator->responseBodyWithBodyId($request['body_id']);
-            } elseif (@$request['body']) {
+            } elseif (isset($request['body']) && @$request['body']) {
               $request['body_url'] = $rootUrlGenerator->responseBodyWithRequestNumber($request['number']);
             }
           }
@@ -505,8 +508,12 @@ function AddScriptTimings(&$requests, $script_timing_file_name) {
         isset($timings['main_thread']) &&
         isset($timings[$timings['main_thread']])) {
       $js_timing = $timings[$timings['main_thread']];
+      // Only allocate the JS timings to the first occurence of a given URL
+      $used = array();
       foreach ($requests as &$request) {
-        if (isset($request['full_url']) && isset($js_timing[$request['full_url']])) {
+        if (isset($request['full_url']) && isset($js_timing[$request['full_url']]) && !isset($used[$request['full_url']])) {
+          $used[$request['full_url']] = true;
+          $all_total = 0.0;
           foreach ($js_timing[$request['full_url']] as $cpu_event => $times) {
             $total = 0.0;
             foreach ($times as $pair) {
@@ -515,6 +522,7 @@ function AddScriptTimings(&$requests, $script_timing_file_name) {
                 $total += $elapsed;
             }
             if ($total > 0) {
+              $all_total += $total;
               $total = intval(round($total));
               if (!isset($request['cpuTimes']))
                 $request['cpuTimes'] = array();
@@ -522,6 +530,8 @@ function AddScriptTimings(&$requests, $script_timing_file_name) {
               $request["cpu.$cpu_event"] = $total;
             }
           }
+          $all_total = intval(round($all_total));
+          $request['cpuTime'] = $all_total;
         }
       }
     }

@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 $remote_cache = array();
 if ($CURL_CONTEXT !== false) {
@@ -17,6 +20,20 @@ foreach( $locations as $id => &$location )
   } else {
     $location['PendingTests'] = GetBacklog($location['localDir'], $location['location']);
   }
+
+  // calculate the ratio of pending tests to agents
+  if (isset($location['PendingTests']['Total'])) {
+    $location['PendingTests']['TestAgentRatio'] = $location['PendingTests']['Total'];
+    $agent_count = 0;
+    if (isset($location['PendingTests']['Testing']))
+      $agent_count += $location['PendingTests']['Testing'];
+    if (isset($location['PendingTests']['Idle']))
+      $agent_count += $location['PendingTests']['Idle'];
+    if ($agent_count > 0) {
+      $location['PendingTests']['TestAgentRatio'] = floatval($location['PendingTests']['Total']) / floatval($agent_count);
+    }
+  }
+
 
   // strip out any sensitive data
   unset($location['localDir']);
@@ -60,7 +77,11 @@ if( array_key_exists('f', $_REQUEST) && $_REQUEST['f'] == 'json' ) {
       $error = ' danger';
     echo "<tr id=\"$name\" class=\"$error\">";
     echo "<td class=\"location\">" . @htmlspecialchars($name) . "</td>" . PHP_EOL;
-    echo "<td>" . @htmlspecialchars($location['labelShort']) . "</td>" . PHP_EOL;
+    $label = $location['labelShort'];
+    if (isset($location['node'])) {
+      $label .= " ({$location['node']})";
+    }
+    echo "<td>" . @htmlspecialchars($label) . "</td>" . PHP_EOL;
     if (array_key_exists('PendingTests', $location)) {
       echo "<td>" . @htmlspecialchars($location['PendingTests']['Idle']) . "</td>" . PHP_EOL;
       echo "<td>" . @htmlspecialchars($location['PendingTests']['Total']) . "</td>" . PHP_EOL;
@@ -126,22 +147,10 @@ function LoadLocations()
 {
   $locations = array();
   $loc = LoadLocationsIni();
-  if (isset($_REQUEST['k']) && preg_match('/^(?P<prefix>[0-9A-Za-z]+)(?P<key>[\.0-9A-Za-z]*)$/', $_REQUEST['k'], $matches)) {
-    $filter = $matches['prefix'];
+  if (isset($_REQUEST['k'])) {
     foreach ($loc as $name => $location) {
-      if (isset($location['browser'])) {
-        $ok = false;
-        if (isset($location['allowKeys'])) {
-          $keys = explode(',', $location['allowKeys']);
-          foreach($keys as $k) {
-            if ($k == $filter) {
-              $ok = true;
-              break;
-            }
-          }
-        }
-        if (!$ok)
-          unset($loc[$name]);
+      if (isset($location['browser']) && isset($location['noapi'])) {
+        unset($loc[$name]);
       }
     }
   }
@@ -179,10 +188,15 @@ function LoadLocations()
                                               'Browsers' => $loc[$group[$j]]['browser'],
                                               'localDir' => $loc[$group[$j]]['localDir'],
                                               'status' => @$loc[$group[$j]]['status'],
-                                              'relayServer' => @$loc[$group[$j]]['relayServer'],
-                                              'relayLocation' => @$loc[$group[$j]]['relayLocation'],
                                               'labelShort' => $loc[$loc_name]['label'],
                                               );
+
+              if (isset($loc[$group[$j]]['scheduler_node']))
+                $locations[$loc_name]['node'] = $loc[$group[$j]]['scheduler_node'];
+                if (isset($loc[$group[$j]]['relayServer']))
+                $locations[$loc_name]['relayServer'] = $loc[$group[$j]]['relayServer'];
+                if (isset($loc[$group[$j]]['relayLocation']))
+                $locations[$loc_name]['relayLocation'] = $loc[$group[$j]]['relayLocation'];
 
               if ($default == $loc['locations'][$i] && $def == $group[$j])
                 $locations[$loc_name]['default'] = true;
@@ -224,7 +238,14 @@ function GetBacklog($dir, $locationId)
             $backlog["p$i"] = $queue[$i];
             $lowCount += $queue[$i];
         }
-    }
+        $ui_priority = intval(GetSetting('user_priority', 0));
+        $backlog['Blocking'] = 0;
+        for ($p = 0; $p <= $ui_priority; $p++) {
+          if (isset($queue[$p])) {
+            $backlog['Blocking'] += $queue[$p];
+          }
+      }
+}
 
     $testers = GetTesters($locationId);
     if (isset($testers) && is_array($testers) && array_key_exists('testers', $testers)) {
@@ -237,6 +258,8 @@ function GetBacklog($dir, $locationId)
     }
 
     $backlog['Total'] = $userCount + $lowCount + $testing;
+    $backlog['Queued'] = $userCount + $lowCount;
+    $backlog['Blocking'] += $testing;
     $backlog['HighPriority'] = $userCount;
     $backlog['LowPriority'] = $lowCount;
     $backlog['Testing'] = $testing;

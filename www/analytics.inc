@@ -1,11 +1,15 @@
 <?php 
-if(isset($settings) && is_array($settings) && isset($settings['analytics']) && strlen($settings['analytics'])) 
-{ 
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
+
+$analytics = GetSetting('analytics');
+if ($analytics) { 
 ?>
     <script type="text/javascript">
     var _gaq = _gaq || [];
     <?php
-    echo "_gaq.push(['_setAccount', '{$settings['analytics']}']);\n";
+    echo "_gaq.push(['_setAccount', '$analytics']);\n";
     if( isset($gaTemplate) && strlen($gaTemplate) )
         echo "_gaq.push(['_setCustomVar', 1, 'Template', '$gaTemplate', 3]);\n";
     ?>

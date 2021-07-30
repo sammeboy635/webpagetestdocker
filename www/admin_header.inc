@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 function header_link($url, $title) {
     $url_parts = explode('?', $url);
@@ -26,7 +29,7 @@ function header_link($url, $title) {
         } ?>
 
     </head>
-    <body>
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
         <div id="wrap">
             <div class="navbar navbar-default" role="navigation">
                 <div class="container-fluid">

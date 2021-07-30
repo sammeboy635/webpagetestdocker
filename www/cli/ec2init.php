@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 if (php_sapi_name() != 'cli')
   exit(1);
 set_time_limit(0);
@@ -16,7 +19,7 @@ if (!Initialized()) {
       sleep(5);
     echo "updating";
     // Update from git and re-run
-    shell_exec('git pull origin master');
+    shell_exec('git pull');
     echo "Re-launching for update\n";
     shell_exec('php "' . __FILE__ .'" updated');
   } else {

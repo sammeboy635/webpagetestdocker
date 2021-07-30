@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 class JsonResultGenerator {
 
@@ -239,6 +242,7 @@ class JsonResultGenerator {
       return null;
     }
     $ret = $testStepResult->getRawResults();
+    $ret['testID'] = $this->testInfo->getId();
 
     $run = $testStepResult->getRunNumber();
     $cached = $testStepResult->isCachedRun();
@@ -250,13 +254,7 @@ class JsonResultGenerator {
     $friendlyUrlGenerator = UrlGenerator::create(true, $this->urlStart, $this->testInfo->getId(), $run, $cached, $step);
     $urlPaths = new TestPaths($this->urlStart . substr($this->testInfo->getRootDirectory(), 1), $run, $cached, $step);
 
-
     $basic_results = $this->hasInfoFlag(self::BASIC_INFO_ONLY);
-
-    if (!$basic_results && $this->fileHandler->gzFileExists($localPaths->pageSpeedFile())) {
-      $ret['PageSpeedScore'] = $testStepResult->getPageSpeedScore();
-      $ret['PageSpeedData'] = $urlGenerator->getGZip($nameOnlyPaths->pageSpeedFile());
-    }
 
     $ret['pages'] = array();
     $ret['pages']['details'] = $urlGenerator->resultPage("details");

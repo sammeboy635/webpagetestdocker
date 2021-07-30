@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 /**
 * Draw label next to a request like "10 ms (404)".
@@ -170,6 +173,9 @@ function LoadPerfData($file_name, $use_cpu, $use_bw, $use_mem = false, $max_bw =
         'bw' => array('data' => array()),
         'mem' => array('data' => array())
         );
+    $has_mem = false;
+    $has_cpu = false;
+    $has_bw = false;
     $data = gz_file($file_name, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     if ($data && count($data) > 1) {
         foreach ($data as $row_num => $row) {
@@ -178,17 +184,38 @@ function LoadPerfData($file_name, $use_cpu, $use_bw, $use_mem = false, $max_bw =
                 if (count($fields) >= 4) {
                     $time = $fields[0];
                     if ($use_bw) {
-                        $perfs['bw']['data'][$time] = (int)$fields[1];
+                        $val = (int)$fields[1];
+                        $perfs['bw']['data'][$time] = $val;
+                        if ($val > 0) {
+                            $has_bw = true;
+                        }
                     }
                     if ($use_cpu) {
-                        $perfs['cpu']['data'][$time] = (float)$fields[2];
+                        $val = (float)$fields[2];
+                        $perfs['cpu']['data'][$time] = $val;
+                        if ($val > 0) {
+                            $has_cpu = true;
+                        }
                     }
                     if ($use_mem) {
-                        $perfs['mem']['data'][$time] = (int)$fields[3];
+                        $val = (int)$fields[3];
+                        $perfs['mem']['data'][$time] = $val;
+                        if ($val > 0) {
+                            $has_mem = true;
+                        }
                     }
                 }
             }
         }
+    }
+    if (!$has_bw) {
+        $use_bw = false;
+    }
+    if (!$has_cpu) {
+        $use_cpu = false;
+    }
+    if (!$has_mem) {
+        $use_mem = false;
     }
     // fix any spikiness in the bandwidth data
     if ($max_bw && $use_bw && count($perfs['bw']['data'])) {
@@ -254,13 +281,13 @@ function LoadPerfData($file_name, $use_cpu, $use_bw, $use_mem = false, $max_bw =
 
 
 /**
-* Draw a lock icon
+* Draw an insecure icon
 *
 * @param mixed $im
 * @param mixed $x
 * @param mixed $y
 */
-function DrawLock($im, $x, $y, $width, $height)
+function DrawNotSecure($im, $x, $y, $width, $height)
 {
     // give it some margins
     $width -= 4;
@@ -269,11 +296,18 @@ function DrawLock($im, $x, $y, $width, $height)
     $boxHeight = ($height - ($top - $y)) - ($height * .1);
     $lock = GetColor($im, 255, 216, 0);
     $black = GetColor($im, 0, 0, 0);
-    imageellipse($im, $x + ($width / 2), $top, $width - 2, $width, $black);
-    imageellipse($im, $x + ($width / 2), $top, $width - 3, $width - 1, $black);
-    imageellipse($im, $x + ($width / 2), $top, $width - 4, $width - 2, $black);
-    imagefilledrectangle($im, $x, $top, $x + $width, $top + $boxHeight, $lock);
-    imagerectangle($im, $x, $top, $x + $width, $top + $boxHeight, $black);
+    $red = GetColor($im, 255, 0, 0);
+    $white = GetColor($im, 255, 255, 255);
+    $values = array(
+        $x + ($width/2), $y - height,
+        $x, $y + $height,
+        $x + $width, $y + $height
+    );
+    imagefilledpolygon($im, $values, 3, $red);
+    imagesetthickness($im, 2);
+    imageline($im, $x + ($width/2) + 1, $top + 6, $x + ($width/2) +1,$y + $height - 3, $white);
+    imageline($im, $x + ($width/2) + .5, $top -1, $x + ($width/2) +.5,$y + $height - 6, $white);
+    imagesetthickness($im,1);
 }
 
 /**

@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 require_once __DIR__ . '/../common_lib.inc';
 
@@ -382,7 +385,8 @@ class TestResultsHtmlTables {
     $filenamePaths = $stepResult->createTestPaths("");
     $urlGenerator = $stepResult->createUrlGenerator("", FRIENDLY_URLS);
     $zipUrl = $urlGenerator->getGZip($filenamePaths->devtoolsTraceFile());
-    $viewUrl = $urlGenerator->stepDetailPage("chrome/trace");
+    $protocol = getUrlProtocol();
+    $viewUrl = '/chrome/perfetto/index.html#!/viewer?url=' . urlencode($protocol . "://{$_SERVER['HTTP_HOST']}" . $zipUrl);
 
     $out = "<br><br><a href=\"$zipUrl\" title=\"Download Chrome Trace\">Trace</a>\n";
     $out .= " (<a href=\"$viewUrl\" target=\"_blank\" title=\"View Chrome Trace\">view</a>)\n";
@@ -445,6 +449,21 @@ class TestResultsHtmlTables {
   private function _createErrorRow($run, $cached, $tableColumns) {
     $error = $this->testInfo->getRunError($run, $cached);
     $error_str = $error ? htmlspecialchars('Test Error: ' . $error) : "Test Data Missing";
+
+    $runResults = $this->testResults->getRunResult($run, $cached);
+    if ($runResults) {
+      $stepResults = $runResults->getStepResults();
+      if (isset($stepResults) && is_array($stepResults) && count($stepResults) > 0) {
+        $stepResult = $stepResults[0];
+        $localPaths = $stepResult->createTestPaths();
+        if (gz_is_file($localPaths->debugLogFile())) {
+          $urlGenerator = $stepResult->createUrlGenerator("", FRIENDLY_URLS);
+          $zipUrl = $urlGenerator->getGZip( $stepResult->createTestPaths("")->debugLogFile());
+          $error_str .= ". <a href=\"$zipUrl\">Debug Log</a>";
+        }
+      }
+    }
+
     $cachedLabel = $cached ? "Repeat View" : "First View";
     $out = "<tr id='run${run}_step1' class='stepResultRow'>";
     $out .= "<td colspan=\"$tableColumns\" align=\"left\" valign=\"middle\">$cachedLabel: $error_str</td></tr>\n";

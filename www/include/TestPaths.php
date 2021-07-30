@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 /**
  * Takes the responsibilty for creating file names and paths for test-related files.
@@ -97,13 +100,6 @@ class TestPaths {
    */
   public function videoDir() {
     return $this->testRoot . "video_" . strtolower($this->underscoreIdentifier());
-  }
-
-  /**
-   * @return string Path for the page speed data file
-   */
-  public function pageSpeedFile() {
-    return $this->testRoot . $this->underscoreIdentifier() . "_pagespeed.txt";
   }
 
   /**
@@ -331,6 +327,13 @@ class TestPaths {
   /**
    * @return string Path for lighthouse JSON file
    */
+  public function cruxJsonFile() {
+    return $this->testRoot . "crux.json";
+  }
+
+  /**
+   * @return string Path for lighthouse JSON file
+   */
   public function lighthouseJsonFile() {
     return $this->testRoot . "lighthouse.json";
   }
@@ -368,13 +371,6 @@ class TestPaths {
   }
 
   /**
-   * @return string Path for the hero element timing results
-   */
-  public function heroElementsJsonFile() {
-    return $this->testRoot . $this->underscoreIdentifier() . "_hero_elements.json";
-  }
-
-  /**
    * @return string Path for the netlog-parsed requests
    */
   public function netlogRequestsFile() {
@@ -386,15 +382,6 @@ class TestPaths {
    */
   public function rawDeviceVideo() {
     return $this->testRoot . $this->underscoreIdentifier() . "_video.mp4";
-  }
-
-  /**
-   * @param int $version Cache format version
-   * @return string Path for CSI cache (is the same for all runs and steps)
-   */
-  public function csiCacheFile($version = 1) {
-    $versionStr = $version > 1 ? (".". $version) : "";
-    return $this->testRoot . "csi" . $versionStr . ".json";
   }
 
   /**

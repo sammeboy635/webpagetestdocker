@@ -1,42 +1,40 @@
 <?php
-$REDIRECT_HTTPS = true;
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
+//$REDIRECT_HTTPS = true;
 include 'common.inc';
 
 $headless = false;
-if (array_key_exists('headless', $settings) && $settings['headless']) {
+if (GetSetting('headless')) {
     $headless = true;
 }
 // load the secret key (if there is one)
-$secret = '';
-if (is_file('./settings/keys.ini')) {
-    $keys = parse_ini_file('./settings/keys.ini', true);
-    if (is_array($keys) && array_key_exists('server', $keys) && array_key_exists('secret', $keys['server'])) {
-      $secret = trim($keys['server']['secret']);
-    }
-}
+$secret = GetServerSecret();
+if (!isset($secret))
+    $secret = '';
 $url = '';
 if (isset($req_url)) {
   $url = htmlspecialchars($req_url);
 }
-if (!strlen($url)) {
-  $url = 'Enter a Website URL';
-}
-$profiles = parse_ini_file('./settings/profiles.ini', true);
+$placeholder = 'Enter a Website URL';
+$profile_file = __DIR__ . '/settings/profiles.ini';
+if (file_exists(__DIR__ . '/settings/common/profiles.ini'))
+  $profile_file = __DIR__ . '/settings/common/profiles.ini';
+if (file_exists(__DIR__ . '/settings/server/profiles.ini'))
+  $profile_file = __DIR__ . '/settings/server/profiles.ini';
+$profiles = parse_ini_file($profile_file, true);
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest - Website Performance and Optimization Test</title>
         <?php $gaTemplate = 'Main'; include ('head.inc'); ?>
-        <style>
-        #description { min-height: 2em; padding-left: 170px; width:380px;}
-        </style>
     </head>
-    <body>
-        <div class="page">
+    <body class="home<?php if ($COMPACT_MODE) {echo ' compact';} ?>">
             <?php
             $siteKey = GetSetting("recaptcha_site_key", "");
-            if (!isset($uid) && !isset($user) && !isset($this_user) && strlen($siteKey)) {
+            if (!isset($uid) && !isset($user) && !isset($USER_EMAIL) && strlen($siteKey)) {
               echo "<script src=\"https://www.google.com/recaptcha/api.js\" async defer></script>\n";
               ?>
               <script>
@@ -55,6 +53,8 @@ $profiles = parse_ini_file('./settings/profiles.ini', true);
             include 'header.inc';
             if (!$headless) {
             ?>
+            <h1 class="attention">Test. Optimize. Repeat.</h1>
+
             <form name="urlEntry" id="urlEntry" action="/runtest.php" method="POST" enctype="multipart/form-data" onsubmit="return ValidateInput(this)">
 
             <?php
@@ -73,18 +73,54 @@ $profiles = parse_ini_file('./settings/profiles.ini', true);
             }
             ?>
 
-            <h2 class="cufon-dincond_black">Test a website's performance</h2>
 
             <div id="test_box-container">
                 <ul class="ui-tabs-nav">
-                    <li class="analytical_review"><a href="/">Advanced Testing</a></li>
-                    <li class="easy_mode ui-state-default ui-corner-top ui-tabs-selected ui-state-active"><a href="#">Simple Testing</a></li>
-                    <li class="visual_comparison"><a href="/video/">Visual Comparison</a></li>
-                    <li class="traceroute"><a href="/traceroute">Traceroute</a></li>
+                    <li class="analytical_review">
+                      <a href="/">
+                        <?php echo file_get_contents('./images/icon-advanced-testing.svg'); ?>Advanced Testing</a>
+                    </li>
+                    <?php
+                    if (file_exists(__DIR__ . '/settings/profiles_webvitals.ini') ||
+                            file_exists(__DIR__ . '/settings/common/profiles_webvitals.ini') ||
+                            file_exists(__DIR__ . '/settings/server/profiles_webvitals.ini')) {
+                        echo "<li class=\"vitals\"><a href=\"/webvitals\">";
+                        echo file_get_contents('./images/icon-webvitals-testing.svg');
+                        echo "Web Vitals</a></li>";
+                    }
+                    ?>
+                    <li class="easy_mode ui-state-default ui-corner-top ui-tabs-selected ui-state-active">
+                      <a href="#">
+                        <?php echo file_get_contents('./images/icon-simple-testing.svg'); ?>Simple Testing</a>
+                    </li>
+                    <li class="visual_comparison">
+                      <a href="/video/">
+                        <?php echo file_get_contents('./images/icon-visual-comparison.svg'); ?>Visual Comparison
+                      </a></li>
+                    <li class="traceroute">
+                      <a href="/traceroute">
+                        <?php echo file_get_contents('./images/icon-traceroute.svg'); ?>Traceroute
+                      </a></li>
                 </ul>
                 <div id="analytical-review" class="test_box">
                     <ul class="input_fields">
-                        <li><input type="text" name="url" id="url" value="<?php echo $url; ?>" class="text large" onfocus="if (this.value == this.defaultValue) {this.value = '';}" onblur="if (this.value == '') {this.value = this.defaultValue;}" onkeypress="if (event.keyCode == 32) {return false;}"></li>
+                        <li>
+                        <label for="url" class="vis-hidden">Enter URL to test</label>
+                        <?php
+                            if (isset($_REQUEST['url']) && strlen($_REQUEST['url'])) {
+                                echo "<input type='text' name='url' id='url' inputmode='url' placeholder='$placeholder' value='$url' class='text large' autocorrect='off' autocapitalize='off' onkeypress='if (event.keyCode == 32) {return false;}'>";
+                            } else {
+                                echo "<input type='text' name='url' id='url' inputmode='url' placeholder='$placeholder' class='text large' autocorrect='off' autocapitalize='off' onkeypress='if (event.keyCode == 32) {return false;}'>";
+                            }
+                        ?>
+                        <?php
+                            if (strlen($siteKey)) {
+                              echo "<button data-sitekey=\"$siteKey\" data-callback='onRecaptchaSubmit' class=\"g-recaptcha start_test\">Start Test &#8594;</button>";
+                            } else {
+                              echo '<input type="submit" name="submit" value="Start Test &#8594;" class="start_test">';
+                            }
+                            ?>
+                      </li>
                         <li>
                             <label for="profile">Test Configuration:</label>
                             <select name="profile" id="profile" onchange="profileChanged()">
@@ -102,38 +138,29 @@ $profiles = parse_ini_file('./settings/profiles.ini', true);
                                 ?>
                             </select>
                         </li>
+                        <li id="description"></li>
                         <li>
-                        <div id="description"></div>
-                        </li>
-                        <li>
-                            <label for="videoCheck">Include Repeat View:<br></label>
+                            <label for="rv">Include Repeat View:<br></label>
                             <input type="checkbox" name="rv" id="rv" class="checkbox" onclick="rvChanged()">(Loads the page, closes the browser and then loads the page again)
                         </li>
                         <li>
-                            <label for="videoCheck">Run Lighthouse Audit:<br></label>
+                            <label for="lighthouse">Run Lighthouse Audit:<br></label>
                             <input type="checkbox" name="lighthouse" id="lighthouse" class="checkbox" onclick="lighthouseChanged()">
                         </li>
                     </ul>
                 </div>
             </div>
 
-            <div id="start_test-container">
-                <?php
-                if (strlen($siteKey)) {
-                  echo "<p><button data-sitekey=\"$siteKey\" data-callback='onRecaptchaSubmit' class=\"g-recaptcha start_test\"></button></p>";
-                } else {
-                  echo '<p><input type="submit" name="submit" value="" class="start_test"></p>';
-                }
-                ?>
-            </div>
-            <div class="cleared"></div>
+
             </form>
 
             <?php
             } // $headless
             ?>
-
-            <?php include('footer.inc'); ?>
+          <?php
+          include(__DIR__ . '/include/home-subsections.inc');
+          ?>
+          <?php include('footer.inc'); ?>
         </div>
 
         <script type="text/javascript">

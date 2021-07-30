@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 require_once __DIR__ . '/../waterfall.inc';
 
@@ -75,7 +78,7 @@ class ConnectionViewHtmlSnippet {
     if ($this->requests->hasSecureRequests()) {
       $out .= $this->_legendBarTableCell("#CF25DF", "SSL Negotiation", 15);
     }
-    $out .= $this->_legendBarTableCell("#28BC00", "Start Render", 2);
+    $out .= $this->_legendBarTableCell("#28BC00", "Start Render", 4);
     if ((float) $this->stepResult->getMetric("domTime")) {
       $out .= $this->_legendBarTableCell("#F28300", "DOM Element", 15);
     }
@@ -85,7 +88,7 @@ class ConnectionViewHtmlSnippet {
     if ((float) $this->stepResult->getMetric("loadEventStart")) {
       $out .= $this->_legendBarTableCell("#C0C0FF", "On Load", 15);
     }
-    $out .= $this->_legendBarTableCell("#0000FF", "Document Complete", 2);
+    $out .= $this->_legendBarTableCell("#0000FF", "Document Complete", 4);
     $out .= "\n</tr>\n</table>\n";
     return $out;
   }

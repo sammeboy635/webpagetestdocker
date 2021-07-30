@@ -1,16 +1,19 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 require_once('page_data.inc');
 $page_keywords = array('View Custom Metrics','WebPageTest','Website Speed Test','Page Speed');
 $page_description = "View Custom Metrics";
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest - View Custom Metrics</title>
         <meta http-equiv="charset" content="iso-8859-1">
         <meta name="author" content="Patrick Meenan">
-        <?php $gaTemplate = 'ViewCSI'; include ('head.inc'); ?>
+        <?php include ('head.inc'); ?>
         <style>
         table.pretty td, table.pretty th {
             overflow: hidden;
@@ -19,8 +22,7 @@ $page_description = "View Custom Metrics";
         }
         </style>
     </head>
-    <body>
-        <div class="page">
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
             <?php
             $tab = 'Test Result';
             include 'header.inc';
@@ -42,7 +44,11 @@ $page_description = "View Custom Metrics";
               foreach ($pageData[$run][$cached]['custom'] as $metric) {
                 if (array_key_exists($metric, $pageData[$run][$cached])) {
                   echo '<tr><th>' . htmlspecialchars($metric) . '</th><td>';
-                  echo htmlspecialchars($pageData[$run][$cached][$metric]);
+                  $val = $pageData[$run][$cached][$metric];
+                  if (!is_string($val) && !is_numeric($val)) {
+                    $val = json_encode($val);
+                  }
+                  echo htmlspecialchars($val);
                   echo '</td></tr>';
                 }
               }
@@ -52,62 +58,7 @@ $page_description = "View Custom Metrics";
             }
             ?>
             </div>
-
+          </div>
             <?php include('footer.inc'); ?>
-        </div>
     </body>
 </html>
-
-<?php
-function GetCSIData() {
-    global $id;
-    global $testPath;
-    global $runs;
-    global $testInfo;
-
-    $csi = array();
-    $csi['fv'] = array();
-    for ($run = 1; $run <= $runs; $run++) {
-        $params = ParseCsiInfo($id, $testPath, $run, 0, true);
-        foreach ($params as $name => $value) {
-            if (!array_key_exists($name, $csi['fv']))
-                $csi['fv'][$name] = array();
-            $csi['fv'][$name][$run] = $value;
-        }
-    }
-
-    if (!$testInfo['fvonly']) {
-        $csi['rv'] = array();
-        for ($run = 1; $run <= $runs; $run++) {
-            $params = ParseCsiInfo($id, $testPath, $run, 1, true);
-            foreach ($params as $name => $value) {
-                if (!array_key_exists($name, $csi['rv']))
-                    $csi['rv'][$name] = array();
-                $csi['rv'][$name][$run] = $value;
-            }
-        }
-    }
-
-    return $csi;
-}
-
-function CSITable($runs, &$data) {
-    echo '<table class="pretty"><tr><th></th>';
-    for ($run = 1; $run <= $runs; $run++)
-        echo "<th>Run $run</th>";
-    echo '</tr>';
-    foreach( $data as $name => &$values ) {
-        if ($name != 'rt' && $name != 'e' ) {
-            echo "<tr><td><b>$name</b></td>";
-            for ($run = 1; $run <= $runs; $run++) {
-                echo '<td>';
-                if (array_key_exists($run, $values))
-                    echo $values[$run];
-                echo '</td>';
-            }
-            echo '</tr>';
-        }
-    }
-    echo '</table>';
-}
-?>

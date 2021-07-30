@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 require_once __DIR__ . '/page_data.inc';
 require_once __DIR__ . '/include/TestInfo.php';
 require_once __DIR__ . '/include/TestResults.php';
@@ -19,61 +22,36 @@ if (isset($testResults)) {
   }
 }
 
-if( $supportsAuth && !defined('EMBED') )
-{
-    echo '<div id="wptAuthBar" class="page">';
-    if( isset($user) )
-    {
-        $logoutUrl = '/forums/member.php?action=logout';
-        if( isset($mybb) && strlen($mybb->user['logoutkey']) )
-            $logoutUrl .= '&logoutkey=' . $mybb->user['logoutkey'];
-        echo "Welcome, " . htmlspecialchars($user) . " &nbsp;|&nbsp; <a href=\"$logoutUrl\">Logout</a>";
-    }
-    else if( isset($_COOKIE['google_email']) && isset($_COOKIE['google_id']) )
-	  {
-        $logoutUrl = 'javascript:ClearOAuthCookies();';
-        $google_email = htmlspecialchars($_COOKIE['google_email']);
-        echo "Welcome, $google_email &nbsp;|&nbsp; <a href=\"$logoutUrl\">Logout</a>";
-    }
-    else
-    {
-        if (is_dir('./forums') && (!array_key_exists('disableMybb', $settings) || !$settings['disableMybb'])) {
-          echo '<a href="/forums/member.php?action=login">Login</a> &nbsp;|&nbsp; ';
-          echo '<a href="/forums/member.php?action=register">Register</a> &nbsp;|&nbsp; ';
-        }
-        if (GetSetting('google_oauth_client_id') && GetSetting('google_oauth_client_secret')) {
-          echo '<a href="/oauth/login.php">Login with Google</a> ';
-        }
-    }
-    echo '</div>';
+// For users that aren't logged in, include details about the test so it can be stored in indexdb for local history support
+if ($id && isset($test) && is_array($test) && 
+        isset($test['testinfo']['created']) && 
+        isset($test['testinfo']['url']) && 
+        !isset($user) && !isset($_COOKIE['google_email'])) {
+    $history = array(
+        'id' => $id,
+        'url' => $test['testinfo']['url'],
+        'created' => $test['testinfo']['created'],
+        'location' => isset($test['testinfo']['locationText']) ? $test['testinfo']['locationText'] : '',
+        'runs' => isset($test['testinfo']['runs']) ? $test['testinfo']['runs'] : 1,
+        'label' => isset($test['testinfo']['label']) ? $test['testinfo']['label'] : '',
+        'video' => $test['testinfo']['video'] ? true : false
+    );
+    $history_json = json_encode($history);
+    echo "\n<script>\nconst wptTestInfo=$history_json;\n</script>\n";
 }
 
 if (!defined('EMBED')) {
 ?>
-
-<div id="header" class="page">
-    <h1 class="logo"><a href="/">WebPageTest</a></h1>
-    <div class="headerAd">
-    <?php
-        if( !defined('BARE_UI') )
-        {
-            // see if we have a location that the test was run from (for a custom ad)
-            $testLoc = null;
-            if( isset($test) && isset($test['test']['loc']) )
-                $testLoc = $test['test']['loc'];
-
-            if( strpos($testLoc, '..') === false && strpos($testLoc, '/') === false && strpos($testLoc, '\\') === false &&
-                isset($testLoc) && strlen($testLoc) && is_file("./custom/$testLoc/headerAd.inc") ) {
-                include("./custom/$testLoc/headerAd.inc");
-            } elseif(is_file('./ads/header.inc')) {
-                include('./ads/header.inc');
-            }
-        }
-    ?>
-    </div>
-</div>
-
-<div id="nav_bkg"><div id="nav_bar"><div class="page"><ul id="nav" class="cufon-dincond_black"><?php
+<?php
+$alert = GetSetting('alert');
+if ($alert) {
+    echo '<div class="alert-banner">' . $alert . '</div>';
+}
+?>
+<header>
+    <a class="logo" href="/"><img src="/images/wpt-logo.svg" alt="WebPageTest, by Catchpoint"/></a>
+    <nav>
+    <ul id="nav"><?php
         if ($id) {
             $resultUrl = "/results.php?test=$id";
             if (array_key_exists('end', $_REQUEST))
@@ -83,29 +61,30 @@ if (!defined('EMBED')) {
         }
         if (!isset($navTabs) || !count($navTabs)) {
             $navTabs = array(  'Home' => '/' );
-            if (isset($headerType) && $headerType == 'video') {
-                if (!$filmstrip) {
-                    $filmstrip = urldecode($_COOKIE['fs']);
-                }
-                if ($filmstrip) {
-                    $navTabs['Test Result'] = '/video/compare.php?tests=' . urlencode($filmstrip);
-                }
-            } else {
-                $navTabs['Test Result'] = isset($resultUrl) ? $resultUrl : '';
-            }
 
-            if (empty($settings['disableTestlog'])) {
+            if (!GetSetting('disableTestlog')) {
               $navTabs['Test History'] = FRIENDLY_URLS ? '/testlog/1/' : '/testlog.php?days=1';
             }
 
             if (is_dir('wptmonitor')) {
                 $navTabs['Monitor'] = '/wptmonitor/';
             }
-            if (is_dir('forums') && (!isset($settings['disableMybb']) || !$settings['disableMybb'])) {
-                $navTabs['Forums'] = '/forums/';
+            $apiUrl = GetSetting('api_url');
+            if ($apiUrl) {
+                $navTabs['API'] = $apiUrl;
             }
-            $navTabs['Documentation'] = 'https://github.com/WPO-Foundation/webpagetest-docs';
+
+            if (GetSetting('forums_url')) {
+                $navTabs['Forums'] = GetSetting('forums_url');
+            }
+            $navTabs['Docs'] = 'https://docs.webpagetest.org/';
+            $blogUrl = GetSetting('blog_url');
+            if ($blogUrl) {
+                $navTabs['Blog'] = $blogUrl;
+            }
+
             $navTabs['About'] = FRIENDLY_URLS ? '/about' : '/about.php';
+
         }
         foreach ($navTabs as $tabName => $tabUrl) {
             // make sure we have a test result to navigate to
@@ -116,35 +95,70 @@ if (!defined('EMBED')) {
                 $opens = '';
                 if( !strcasecmp($tabName, $tab) )
                     $current = ' class="current"';
-                if (substr($tabUrl, 0, 4) == 'http') {
-                    $target = ' target="_blank"';
+                if (substr($tabUrl, 0, 4) == 'http' && $tabName != 'API') {
+                    $target = ' target="_blank" rel="noopener"';
                     $opens = ' (opens in a new tab)';
                 }
-                echo "<li$current><a title=\"$tabName$opens\" href=\"$tabUrl\"$target>$tabName</a></li>";
+                if ($opens != '') {
+                    echo "<li$current><a title=\"$tabName$opens\" href=\"$tabUrl\"$target>$tabName</a></li>";
+                } else {
+                    echo "<li$current><a href=\"$tabUrl\"$target>$tabName</a></li>";
+                }
+                
             }
         }
 ?></ul>
+    </nav>
+<?php
 
-</div></div></div>
+if( $supportsAuth && !defined('EMBED') )
+{
+    echo '<ul id="wptAuthBar">';
+    if ($supportsSaml) {
+        if (isset($USER_EMAIL) && GetSetting('saml_account')) {
+            $saml_account = GetSetting('saml_account');
+            $saml_logout = GetSetting('saml_logout');
+            if ($saml_logout) {
+                $saml_logout = htmlspecialchars($saml_logout);
+                $logoutUrl = "javascript:wptLogout('$saml_logout');";
+            } else {
+                $logoutUrl = "javascript:wptLogout();";
+            }
+            echo "<li><a href=\"$saml_account\">My Account</a>&nbsp;|&nbsp; <a href=\"$logoutUrl\">Logout</a></li>";
+        } else {
+            echo '<li><a href="/saml/login.php">Login';
+            echo file_get_contents('./images/icon-login.svg');
+            echo '</a></li>';
+            $register = GetSetting('saml_register');
+            if ($register) {
+                echo "<li><a class='pill' href='$register'>Sign-up</a></li>";
+            }
+        }
+    } elseif( isset($user) ) {
+        $logoutUrl = 'https://www.webpagetest.org/forums/member.php?action=logout';
+        echo "<li>Welcome, " . htmlspecialchars($user) . " &nbsp;|&nbsp; <a href=\"$logoutUrl\">Logout</a></li>";
+    } else if( isset($_COOKIE['google_email']) && isset($_COOKIE['google_id']) ) {
+        $logoutUrl = 'javascript:wptLogout();';
+        $google_email = htmlspecialchars($_COOKIE['google_email']);
+        echo "<li>Welcome, $google_email &nbsp;|&nbsp; <a href=\"$logoutUrl\">Logout</a></li>";
+    } else if (GetSetting('google_oauth_client_id') && GetSetting('google_oauth_client_secret')) {
+        echo '<li> &nbsp;|&nbsp; <a href="/oauth/login.php">Login with Google</a></li>';
+    }
+    echo '</ul>';
+}
+?>
+</header>
 
 <?php
-if (!defined('BARE_UI') && isset($settings['alert']) && strlen($settings['alert'])) {
-    echo '<div class="alert">';
-    echo $settings['alert'];
-    echo '</div>';
-}
 } // EMBED
 ?>
 
 <div id="main">
-    <div class="level_2">
-        <div class="content-wrap">
-            <div class="content">
 
 
 <?php
 //If we're looking at a test result, include the extra header section and sub-menu
-if( !strcasecmp('Test Result', $tab) && !@$nosubheader && !defined('EMBED') )
+if( !strcasecmp('Test Result', $tab) && (!isset($nosubheader) || !@$nosubheader) && !defined('EMBED') )
 {
     // make sure the test is actually complete
     if(isset($test['test']['completeTime']))
@@ -165,8 +179,7 @@ if( !strcasecmp('Test Result', $tab) && !@$nosubheader && !defined('EMBED') )
         }
         $gradeRunResults = $testResults->getRunResult($gradeRun, false);
         $firstRunResults = $testResults->getRunResult(1, false);
-
-        echo '<div id="header_container">';
+        echo '<div id="header_container" class="box">';
         // Only include optimization data for normal tests
         $data_class = '';
         if (!isset($test['testinfo']['type']) || !strlen($test['testinfo']['type'])) {
@@ -175,7 +188,6 @@ if( !strcasecmp('Test Result', $tab) && !@$nosubheader && !defined('EMBED') )
               $localPaths = new TestPaths($testPath, $gradeRun, false);
               $urlGenerator = UrlGenerator::create(false, "", $id, $gradeRun, false);
 
-              echo "<div id=\"opthelp clear\"> &nbsp; </div>\n";
               echo '</div>';
               echo '<div id="grades">';
                   $grades = GetGrades($testInfo, $gradeRunResults, $firstRunResults);
@@ -191,8 +203,9 @@ if( !strcasecmp('Test Result', $tab) && !@$nosubheader && !defined('EMBED') )
                             $lighthouse = $urlGenerator->resultPage("lighthouse");
                             echo "<li class=\"$check\"><a href=\"$lighthouse\"><h2 class=\"{$grade['class']}\">{$grade['grade']}</h2></a>{$grade['description']}</li>";
                           }else if ($check == 'security') {
+                            $onclick = "try{if(_gaq!=undefined){_gaq.push(['_trackEvent','Outbound','Click','Snyk']);}}catch(err){}";
                             $snykUrl = "https://snyk.io/test/website-scanner/?test={$id}&utm_medium=referral&utm_source=webpagetest&utm_campaign=website-scanner";
-                            echo "<li class=\"$check\"><a href=\"$snykUrl\"><h2 class=\"{$grade['class']}\">{$grade['grade']}</h2></a>{$grade['description']}</li>";
+                            echo "<li class=\"$check\"><a href=\"$snykUrl\" onclick=\"$onclick\"><h2 class=\"{$grade['class']}\">{$grade['grade']}</h2></a>{$grade['description']}</li>";
                           }else {
                             echo "<li class=\"$check\"><a href=\"$optlink#$check\"><h2 class=\"{$grade['class']}\">{$grade['grade']}</h2></a>{$grade['description']}</li>";
                           }
@@ -211,9 +224,9 @@ if( !strcasecmp('Test Result', $tab) && !@$nosubheader && !defined('EMBED') )
         $showUrl = $numSteps > 1 ? $gradeRunResults->getStepResult(1)->getUrl() : $url;
         $shortUrl = str_replace('http://', '',  FitText($showUrl, 180));
         $shortUrl = $numSteps > 1 ? ($shortUrl . " ($numSteps steps)") : $shortUrl;
-            echo "<h2 class=\"alternate cufon-dincond_regular\">Web Page Performance Test for<br>";
-            if ($settings['nolinks']) {
-                echo "<span class=\"medium colored\">$shortUrl</span>";
+            echo "<h2>Web page performance test result for<br>";
+            if (GetSetting('nolinks')) {
+                echo "<span class=\"page-tested\">$shortUrl</span>";
             } else {
                 echo "<a class=\"url cufon-dincond_black\"  rel=\"nofollow\" title=\"$showUrl\" href=\"$showUrl\">$shortUrl</a>";
             }
@@ -247,36 +260,13 @@ if( !strcasecmp('Test Result', $tab) && !@$nosubheader && !defined('EMBED') )
                 echo '<b>Scripted test</b><br>';
             if( strlen($blockString) )
                 echo "Blocked: <b>$blockString</b><br>";
-            if (isset($test['testinfo']['benchmark']) && strlen($test['testinfo']['benchmark'])) {
-                echo 'Benchmark: ';
-                $benchmark = $test['testinfo']['benchmark'];
-                if (isset($test['testinfo']['epoch'])) {
-                    $epochStr = $test['testinfo']['epoch'];
-                    $epoch = (int)$epochStr;
-                    $epochTime = strftime('%x %X', $epoch + ($tz_offset * 60));
-                    $benchmarkStr = "$benchmark - <span class=\"jsdate\" date=\"$epochStr\">$epochTime</span>";
-                } else {
-                    $benchmarkStr = $benchmark;
-                }
-                if ($settings['nolinks']) {
-                    echo "<span class=\"medium colored\">$benchmarkStr</span>";
-                } else {
-                    if (isset($test['testinfo']['epoch'])) {
-                        $benchmarkUrl = "/benchmarks/viewtest.php?benchmark=$benchmark&metric=docTime&time=$epoch";
-                    } else {
-                        $benchmarkUrl = "/benchmarks/view.php?benchmark=$benchmark&aggregate=median";
-                    }
-                    echo "<a class=\"url\" rel=\"nofollow\" title=\"$benchmarkUrl\" href=\"$benchmarkUrl\">$benchmarkStr</a>";
-                }
-                echo '<br>';
-            }
             if (isset($test['testinfo']['context']) && strlen($test['testinfo']['context']))
             {
                 echo 'Context: ';
                 $contextText = htmlspecialchars($test['testinfo']['context']);
                 if (isset($test['testinfo']['context_url']) && strlen($test['testinfo']['context_url'])) {
                     $contextUrl = $test['testinfo']['context_url'];
-                    if ($settings['nolinks']) {
+                    if (GetSetting('nolinks')) {
                         echo "<span class=\"medium colored\">$contextText</span>";
                     } else {
                         echo "<a class=\"url\" rel=\"nofollow\" title=\"$contextUrl\" href=\"$contextUrl\">$contextText</a>";
@@ -289,7 +279,7 @@ if( !strcasecmp('Test Result', $tab) && !@$nosubheader && !defined('EMBED') )
         echo '</div>';
         echo '</div>';
 
-        echo '<div id="test_results-container">';
+        echo '<div id="test_results-container" class="box">';
 
         echo '<div id="test-1" class="test_results">';
         echo '<ul class="test_menu">';
@@ -304,17 +294,18 @@ if( !strcasecmp('Test Result', $tab) && !@$nosubheader && !defined('EMBED') )
                        'Details' => $menuUrlGenerator->resultPage("details", $endParams));
         $gradedRunResults = $testResults->getRunResult($gradeRun, !empty($cached));
 
-        if ($gradedRunResults->isOptimizationChecked())
-            $tabs['Performance Review'] = $menuUrlGenerator->resultPage("performance_optimization", $endParams);
+        if ($gradedRunResults->hasWebVitals())
+            $tabs['Web Vitals'] = $menuUrlGenerator->resultPagePHP("vitals", $endParams);
 
-        if ($gradedRunResults->averagePageSpeedScore() !== null)
-            $tabs['PageSpeed'] = $menuUrlGenerator->resultPage("pagespeed", $endParams);
-        $tabs['Content Breakdown'] = $menuUrlGenerator->resultPage("breakdown", $endParams);
+        if ($gradedRunResults->isOptimizationChecked())
+            $tabs['Performance'] = $menuUrlGenerator->resultPage("performance_optimization", $endParams);
+
+        $tabs['Content'] = $menuUrlGenerator->resultPage("breakdown", $endParams);
         $tabs['Domains'] = $menuUrlGenerator->resultPage("domains", $endParams);
         if ($gradedRunResults->hasBreakdownTimeline()) {
           // currently only supported by standard urls
           $menuStandardUrlGenerator = UrlGenerator::create(false, "", $id, $run, !empty($cached));
-          $tabs['Processing Breakdown'] = $menuStandardUrlGenerator->resultPage("breakdownTimeline");
+          $tabs['Processing'] = $menuStandardUrlGenerator->resultPage("breakdownTimeline");
         }
 
         if( !isset($test['testinfo']) || !isset($test['testinfo']['noimages']) || !$test['testinfo']['noimages'] )
@@ -339,7 +330,8 @@ if( !strcasecmp('Test Result', $tab) && !@$nosubheader && !defined('EMBED') )
           $tabUrl = GetSetting('image_analysis');
           if ($tabUrl) {
             $tabUrl = str_replace('{test id}', $id, $tabUrl);
-            echo "<li><a href=\"$tabUrl\" title=\"Cloudinary Image Analysis (external) - Opens in a new window.\" target=\"_blank\" rel=\"noopener\" style=\"padding-right: 2px;\">Image Analysis<img src=\"/images/external_header.svg\" style=\"padding-top: 4px; float: right;\"></a></li>";
+            $onclick = "try{if(_gaq!=undefined){_gaq.push(['_trackEvent','Outbound','Click','Cloudinary']);}}catch(err){}";
+            echo "<li><a href=\"$tabUrl\" onclick=\"$onclick\" title=\"Cloudinary Image Analysis (external) - Opens in a new window.\" target=\"_blank\" rel=\"noopener\" style=\"padding-right: 2px;\">Image Analysis<img src=\"/images/icon-external.svg\"></a></li>";
           }
         }
 
@@ -348,7 +340,8 @@ if( !strcasecmp('Test Result', $tab) && !@$nosubheader && !defined('EMBED') )
           $tabUrl = GetSetting('request_map');
           if ($tabUrl) {
             $tabUrl = str_replace('{test id}', $id, $tabUrl);
-            echo "<li><a href=\"$tabUrl\" title=\"Request Map (external) - Opens in a new window.\" target=\"_blank\" rel=\"noopener\" style=\"padding-right: 2px;\">Request Map<img src=\"/images/external_header.svg\" style=\"padding-top: 4px; float: right;\"></a></li>";
+            $onclick = "try{if(_gaq!=undefined){_gaq.push(['_trackEvent','Outbound','Click','RequestMap']);}}catch(err){}";
+            echo "<li><a href=\"$tabUrl\" onclick=\"$onclick\" title=\"Request Map (external) - Opens in a new window.\" target=\"_blank\" rel=\"noopener\" style=\"padding-right: 2px;\">Request Map<img src=\"/images/icon-external.svg\"></a></li>";
           }
         }
 

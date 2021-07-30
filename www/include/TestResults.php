@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 require_once __DIR__ . '/FileHandler.php';
 require_once __DIR__ . '/TestStepResult.php';
@@ -50,7 +53,7 @@ class TestResults {
     $firstViewOnly = $testInfo->isFirstViewOnly();
     $testComplete = $testInfo->isComplete();
     for ($runNumber = 1; $runNumber <= $numRuns; $runNumber++) {
-      if (!$testComplete && !$testInfo->isRunComplete($runNumber)) {
+      if (!$testComplete) {
         continue;
       }
       $firstView = TestRunResults::fromFiles($testInfo, $runNumber, false, $fileHandler);
@@ -98,7 +101,14 @@ class TestResults {
    * @return string Returns the URL from the first step of the first view of the first run
    */
   public function getUrlFromRun() {
-    return $this->getRunResult(1, false)->getStepResult(1)->getUrl();
+    $runResult = $this->getRunResult(1, false);
+    if (isset($runResult)) {
+      $stepResult = $runResult->getStepResult(1);
+      if (isset($stepResult)) {
+        return $stepResult->getUrl();
+      }
+    }
+    return null;
   }
 
   /**

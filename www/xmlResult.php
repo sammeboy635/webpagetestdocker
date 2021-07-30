@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 if(extension_loaded('newrelic')) { 
   newrelic_add_custom_tracer('GetTestStatus');
   newrelic_add_custom_tracer('calculatePageStats');
@@ -27,10 +30,6 @@ require_once 'include/TestResults.php';
 require_once 'include/TestStepResult.php';
 
 // see if we are sending abbreviated results
-$pagespeed = 0;
-if (array_key_exists('pagespeed', $_REQUEST))
-  $pagespeed = (int)$_REQUEST['pagespeed'];
-
 if( isset($test['test']) && $test['test']['batch'] )
     BatchResult($id, $testPath);
 else
@@ -53,9 +52,6 @@ else
         if( !strlen($url) )
             $url = $testResults->getUrlFromRun();
         $additionalInfo = array();
-        if ($pagespeed) {
-            $additionalInfo[] = XmlResultGenerator::INFO_PAGESPEED;
-        }
         if (array_key_exists("requests", $_REQUEST) && $_REQUEST["requests"]) {
             $additionalInfo[] = XmlResultGenerator::INFO_MEDIAN_REQUESTS;
             if ($_REQUEST["requests"] != "median") {

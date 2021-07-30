@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 require_once __DIR__ . '/page_data.inc';
 require_once __DIR__ . '/object_detail.inc';
 require_once __DIR__ . '/include/TestRunResults.php';
@@ -125,7 +128,7 @@ function createGradeArray($scores) {
     {
       if( $item['score'] >= 80 )
       {
-        $item['grade'] = "<img src=\"{$GLOBALS['cdnPath']}/images/grade_check.png\" alt=\"yes\">";
+        $item['grade'] = "&#10003;";
         $item['class'] = 'A';
       }
       else

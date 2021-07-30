@@ -1,5 +1,8 @@
 <meta http-equiv="Content-type" content="text/html;charset=UTF-8">
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 if( count($page_keywords) )
     echo '<meta name="keywords" content="' . implode(',', $page_keywords) . "\">\n";  //"
 if( strlen($page_description) )
@@ -8,13 +11,19 @@ if( strlen($page_description) )
 <meta name="author" content="Patrick Meenan">
 <meta http-equiv="X-UA-Compatible" content="IE=Edge"> 
 
-<link rel="shortcut icon" href="/images/favicon.ico" type="image/vnd.microsoft.icon">
-<link rel="icon" href="/images/favicon.png" type="image/png">
+<link rel="apple-touch-icon" sizes="192x192" href="/images/icons-192.png">
+<link rel="icon" type="image/png" sizes="96x96" href="/images/favicon-96x96.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16.png">
 
 <?php 
     if(!isset($noanalytics) && extension_loaded('newrelic'))
         echo @newrelic_get_browser_timing_header();
-    if (is_file('./settings/customhead.inc.php')) {
+    if (file_exists('./settings/server/customhead.inc.php')) {
+        include('./settings/server/customhead.inc.php');
+    } elseif (file_exists('./settings/common/customhead.inc.php')) {
+        include('./settings/common/customhead.inc.php');
+    } elseif (file_exists('./settings/customhead.inc.php')) {
         include('./settings/customhead.inc.php');
     }
     echo "<script type=\"text/javascript\">\n";
@@ -23,7 +32,7 @@ if( strlen($page_description) )
     if (!isset($noanalytics) && is_file('./js/user-timing-rum-min.js'))
       include('./js/user-timing-rum-min.js');
     echo "\n</script>\n";
-    echo "<link rel=\"stylesheet\" href=\"{$GLOBALS['cdnPath']}/pagestyle.css?v=" . VER_CSS . "\" type=\"text/css\">\n";
+    echo "<link rel=\"stylesheet\" href=\"{$GLOBALS['cdnPath']}/pagestyle2.css?v=" . VER_CSS . "\" type=\"text/css\">\n";
     echo "<style type=\"text/css\">\n";
     
     // switch to the private install logo if we're not running on webpagetest

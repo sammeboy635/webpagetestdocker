@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 require_once('breakdown.inc');
 require_once('contentColors.inc');
@@ -10,11 +13,20 @@ $page_description = "Chrome main-thread processing breakdown$testLabel";
 
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest Content Breakdown<?php echo $testLabel; ?></title>
         <?php $gaTemplate = 'Content Breakdown'; include ('head.inc'); ?>
         <style type="text/css">
+            div.table table {
+              max-width: 300px;
+              vertical-align:top;
+            }
+
+            div.table td {
+                max-width: 250px;
+            }
+
             td {
                 text-align:left;
                 vertical-align:top;
@@ -22,7 +34,7 @@ $page_description = "Chrome main-thread processing breakdown$testLabel";
             }
 
             div.bar {
-                height:12px;
+                height:20px;
                 margin-top:auto;
                 margin-bottom:auto;
             }
@@ -44,11 +56,10 @@ $page_description = "Chrome main-thread processing breakdown$testLabel";
             }
         </style>
     </head>
-    <body>
-        <div class="page">
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
             <?php
             $tab = 'Test Result';
-            $subtab = 'Processing Breakdown';
+            $subtab = 'Processing';
             include 'header.inc';
             $processing = GetDevToolsCPUTime($testPath, $run, $cached);
             if (isset($processing)) {
@@ -171,7 +182,6 @@ $page_description = "Chrome main-thread processing breakdown$testLabel";
                 </tr>
             </table>
         </div>
-
         <?php include('footer.inc'); ?>
 
         <!--Load the AJAX API-->

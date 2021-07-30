@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 /**
  * For generation of test-run specific URLs
@@ -119,11 +122,7 @@ abstract class UrlGenerator {
     $tests = $this->testId . "-r:" . $this->run . "-c:" . ($this->cached ? 1 : 0);
     $tests .= ($this->step > 1) ? ("-s:" . $this->step) : "";
     $tests .= $end ? "-e:$end" : "";
-
-    $id = $this->testId . "." . $this->run . "." . ($this->cached ? 1 : 0);
-    $id .= ($this->step > 1) ? ("." . $this->step) : "";
-    $id .= $end ? "-e$end" : "";
-    return $this->baseUrl . "/video/create.php?tests=" . $tests . "&id=" . $id;
+    return $this->baseUrl . "/video/view.php?tests=" . $tests;
   }
 
   /**
@@ -142,9 +141,13 @@ abstract class UrlGenerator {
    * @param int $fit Maximum size of the thumbnail
    * @return string The URL for a thumbnail of the video frame
    */
-  public function videoFrameThumbnail($frame, $fit) {
+  public function videoFrameThumbnail($frame, $fit, $options = null) {
     $file = "video_" . rtrim(strtolower($this->underscorePrefix()), "_") . "/" . $frame;
-    return $this->baseUrl . "/thumbnail.php?test=" . $this->testId . "&fit=" . $fit . "&file=" . $file;
+    $url = $this->baseUrl . "/thumbnail.php?test=" . $this->testId . "&fit=" . $fit . "&file=" . $file;
+    if (isset($options)) {
+      $url .= "&$options";
+    }
+    return $url;
   }
 
   /**
@@ -186,6 +189,11 @@ class FriendlyUrlGenerator extends UrlGenerator {
       $url .= "?" . $extraParams;
     }
     return $url;
+  }
+
+  public function resultPagePHP($page, $extraParams = null) {
+    $extraParams = $extraParams ? ("&" . $extraParams) : "";
+    return $this->baseUrl . "/" . $page . ".php?" . $this->urlParams() . $extraParams;
   }
 
   public function thumbnail($image) {
@@ -232,6 +240,11 @@ class FriendlyUrlGenerator extends UrlGenerator {
 class StandardUrlGenerator extends UrlGenerator {
 
   public function resultPage($page, $extraParams = null) {
+    $extraParams = $extraParams ? ("&" . $extraParams) : "";
+    return $this->baseUrl . "/" . $page . ".php?" . $this->urlParams() . $extraParams;
+  }
+
+  public function resultPagePHP($page, $extraParams = null) {
     $extraParams = $extraParams ? ("&" . $extraParams) : "";
     return $this->baseUrl . "/" . $page . ".php?" . $this->urlParams() . $extraParams;
   }

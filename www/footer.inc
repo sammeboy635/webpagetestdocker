@@ -1,138 +1,27 @@
-            <div style="width:100%;float:none;clear:both;"></div>
 
             <?php
             //If we're looking at a test result, include the inner test-result div
-            if( !strcasecmp('Test Result', $tab) && !@$nosubheader )
+            if( !strcasecmp('Test Result', $tab) && (!isset($nosubheader) || !@$nosubheader) )
             {
                 echo '</div></div>';
             }
             ?>
-            </div>
-        </div>
-    </div>
-</div>
 
-<div class="page">
-    <?php
-        $feeds = null;
-        if( is_file('./tmp/feeds.dat') )
-            $feeds = json_decode(file_get_contents('./tmp/feeds.dat'), true);
 
-        if( isset($feeds) && count($feeds) && !defined('BARE_UI') )
-        {
-            echo '<table id="feeds"><tr>';
-
-            // display the column headers
-            foreach( $feeds as $title => &$feed )
-                echo "<th>$title</th>";
-            echo '</tr><tr>';
-
-            // display the feed contents
-            $column = 0;
-            foreach( $feeds as $title => &$feed )
-            {
-                $column++;
-                echo '<td><ul>';
-
-                // keep a list of titles so we only display the most recent (for threads)
-                $titles = array();
-
-                $count = 0;
-                $extended = false;
-                foreach( $feed as $time => &$item )
-                {
-                    if( $count <= 25 )
-                    {
-                        $dupe = false;
-                        foreach( $titles as $title )
-                            if( $title == $item['title'] )
-                                $dupe = true;
-
-                        if( !$dupe )
-                        {
-                            $count++;
-                            if( $count == 6 )
-                            {
-                                $extended = true;
-                                echo "<li id=\"show_more_feeds_$column\"><a href=\"javascript:void(o)\" onclick=\"showFeeds($column)\">more...</a></li><li class=\"morefeeds\" ><div id=\"more_feeds_$column\" class=\"hidden\"><ul>";
-                            }
-
-                            $titles[] = $item['title'];
-                            echo "<li><a title=\"{$item['source']}\" href=\"{$item['link']}\">{$item['title']}</a></li>";
-                        }
-                    }
-                }
-
-                unset($titles);
-
-                if( $extended )
-                    echo '</ul></div></li>';
-
-                echo '</ul></td>';
-            }
-            echo '</tr></table>';
+    <footer>
+        <ul>
+        <?php
+        if (is_file('settings/common/terms.inc') || is_file('settings/server/terms.inc') || is_file('settings/terms.inc')) {
+            echo '<li><a href="/terms.php">Terms of Service</a></li>';
         }
-    ?>
-
-    <?php
-        // display the sponsor logos across the bottom of the page
-        $sponsors = array();
-        if (is_file('./settings/sponsors.ini')) {
-            $s = parse_ini_file('./settings/sponsors.ini', true);
-            if (is_array($s) && count($s)) {
-                foreach( $s as $name => $entry ){
-                    if( $name != 'catchpoint' && strlen($entry['logo']) ) {
-                        $offset = 0;
-                        if( $entry['index'] )
-                            $offset = -40 * $entry['index'];
-                        $nofollow = false;
-                        if (isset($entry['nofollow']) && $entry['nofollow'])
-                          $nofollow = true;
-                        $sponsors[] = array('logo' => $GLOBALS['cdnPath'] . $entry['logo'], 'href' => $entry['href'], 'title' => $entry['alt'], 'offset' => $offset, 'nofollow' => $nofollow);
-                    }
-                }
-            }
+        $privacy_policy = GetSetting('privacy_policy_url');
+        if ($privacy_policy) {
+            echo "<li><a href='$privacy_policy'>Privacy Policy</a></li>";
         }
-
-        $count = count($sponsors);
-        if( $count && !defined('BARE_UI') )
-        {
-            echo '<div id="sponsor_header">WebPagetest Partners</div>';
-            shuffle($sponsors);
-
-            $rows = ceil((float)$count / 5.0);
-            $rowCount = ceil((float)$count / (float)$rows);
-            echo '<div id="links">';
-            echo'<table class="links"><tr>';
-            $i = 0;
-            $remaining = $count;
-            foreach( $sponsors as &$sponsor )
-            {
-                if( $i >= $rowCount || ($i == $rowCount - 1 && $remaining < 4 && $remaining > $rowCount) )
-                {
-                    $i = 1;
-                    echo '</tr></table><table class="links"><tr>';
-                }
-                else
-                    $i++;
-
-                $remaining--;
-                $style = "background-image: url({$sponsor['logo']}); background-position: 0px {$sponsor['offset']}px;";
-                $title = '';
-                if (array_key_exists('title', $sponsor))
-                    $title = $sponsor['title'];
-                $nofollow = $sponsor['nofollow'] ? 'rel="nofollow"' : '';
-                echo "<td ><a href=\"{$sponsor['href']}\" $nofollow title=\"$title\"><div class=\"sponsor_logo\" style=\"$style\"></div></a></td>";
-                if( $remaining && $remaining < $rowCount - $i - 1 )
-                    echo '<td></td>';
-            }
-            echo '</tr></table>';
-            echo '</div>';
-        }
-    ?>
-    </div>
-    <div class="cleared"></div>
-
+        ?>
+        <li>&copy; <a href="https://www.catchpoint.com/">Catchpoint Systems, Inc.</a> All rights reserved.</li>
+        </ul>
+    </footer>
     <?php
     if (!isset($site_js_loaded) || !$site_js_loaded) {
         echo "<script type=\"text/javascript\" src=\"{$GLOBALS['cdnPath']}/js/site.js?v=" . VER_JS . "\"></script>\n";
@@ -153,18 +42,12 @@
     }
 
     ?>
-    <script type="text/javascript">
-        function showFeeds(column)
-        {
-            var label = document.getElementById("show_more_feeds_" + column);
-            label.parentNode.removeChild( label );
-
-            document.getElementById("more_feeds_" + column).className = "";
-            return false;
-        }
-    </script>
     <?php
-    if (is_file('./settings/customfooter.inc.php')) {
+    if (file_exists('./settings/server/customfooter.inc.php')) {
+        include('./settings/server/customfooter.inc.php');
+    } elseif (file_exists('./settings/common/customfooter.inc.php')) {
+        include('./settings/common/customfooter.inc.php');
+    } elseif (file_exists('./settings/customfooter.inc.php')) {
         include('./settings/customfooter.inc.php');
     }
     ?>

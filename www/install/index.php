@@ -1,9 +1,18 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 chdir ('..');
 include 'common.inc';
+
+if (!$privateInstall && !$admin) {
+    header("HTTP/1.1 403 Unauthorized");
+    exit;
+}
+  
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest - Install Check</title>
         <meta http-equiv="charset" content="iso-8859-1">
@@ -45,14 +54,13 @@ include 'common.inc';
         }
         </style>
     </head>
-    <body>
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
         <h1>WebPageTest <?php echo VER_WEBPAGETEST; ?> Installation Check</h1>
         <h2>PHP</h2><ul>
         <?php CheckPHP(); ?>
         </ul><h2>System Utilities</h2><ul>
         <?php CheckUtils(); ?>
       </ul><h2>Misc.</h2><ul>
-        <?php CheckMisc(); ?>
         </ul><h2>Filesystem</h2><ul>
         <?php CheckFilesystem(); ?>
         </ul><h2>Test Locations</h2><ul>
@@ -91,7 +99,6 @@ function ShowCheck($label, $pass, $required = true, $value = null) {
 /*-----------------------------------------------------------------------------
 -----------------------------------------------------------------------------*/
 function CheckPHP() {
-    global $settings;
     ShowCheck('PHP version at least 5.3', phpversion() >= 5.3, true, phpversion());
     ShowCheck('GD module installed', extension_loaded('gd'));
     ShowCheck('FreeType enabled for GD (required for video rendering)', CheckFreeType(), false);
@@ -102,28 +109,18 @@ function CheckPHP() {
     ShowCheck('php.ini allow_url_fopen enabled', ini_get('allow_url_fopen'), true);
     ShowCheck('APC installed', extension_loaded('apc') || extension_loaded('apcu'), false);
     ShowCheck('SQLite installed (for editable test labels)', class_exists("SQLite3"), false);
-    ShowCheck('Open SSL module installed (for "Login with Google")', function_exists('openssl_x509_read'), false);
-    ShowCheck('xml module installed (for RSS feeds)', extension_loaded('xml'), false);
-    ShowCheck('pcre module installed (for RSS feeds)', extension_loaded('pcre'), false);
-    ShowCheck('xmlreader module installed (for RSS feeds)', extension_loaded('xmlreader'), false);
-    ShowCheck('php.ini upload_max_filesize > 10MB', return_bytes(ini_get('upload_max_filesize')) > 10000000, false, ini_get('upload_max_filesize'));
-    ShowCheck('php.ini post_max_size > 10MB', return_bytes(ini_get('post_max_size')) > 10000000, false, ini_get('post_max_size'));
+    ShowCheck('php.ini upload_max_filesize >= 100MB', return_bytes(ini_get('upload_max_filesize')) > 100000000, false, ini_get('upload_max_filesize'));
+    ShowCheck('php.ini post_max_size >= 100MB', return_bytes(ini_get('post_max_size')) > 100000000, false, ini_get('post_max_size'));
     ShowCheck('php.ini memory_limit > 256MB or -1 (disabled)', return_bytes(ini_get('memory_limit')) > 256000000 || ini_get('memory_limit') == -1, false, ini_get('memory_limit'));
 }
 
 function CheckUtils() {
-  global $settings;
   ShowCheck('ffmpeg installed with --enable-libx264 (required for video)', CheckFfmpeg());
-  ShowCheck('ffmpeg installed with scale and decimate filters (required for mobile video)', CheckFfmpegFilters($ffmpegInfo), false, $ffmpegInfo);
-  ShowCheck('imagemagick compare installed (required for mobile video)', CheckCompare(), false);
   ShowCheck('jpegtran installed (required for JPEG analysis)', CheckJpegTran(), false);
   ShowCheck('exiftool installed (required for JPEG analysis)', CheckExifTool(), false);
-  if (array_key_exists('beanstalkd', $settings))
-      ShowCheck("beanstalkd responding on {$settings['beanstalkd']} (configured in settings.ini)", CheckBeanstalkd());
-}
-
-function CheckMisc() {
-    ShowCheck('Python 2.7 with modules (faster mobile-video processing)', CheckPythonVideo($info), false, $info);
+  $beanstalk = GetSetting('beanstalkd');
+  if ($beanstalk)
+      ShowCheck("beanstalkd responding on $beanstalk (configured in settings.ini)", CheckBeanstalkd());
 }
 
 /*-----------------------------------------------------------------------------
@@ -285,10 +282,9 @@ function return_bytes($val) {
 *
 */
 function CheckBeanstalkd() {
-    global $settings;
     $ret = false;
     require_once('./lib/beanstalkd/pheanstalk_init.php');
-    $pheanstalk = new Pheanstalk_Pheanstalk($settings['beanstalkd']);
+    $pheanstalk = new Pheanstalk_Pheanstalk(GetSetting('beanstalkd'));
     if ($pheanstalk->getConnection()->isServiceListening()) {
         $id = $pheanstalk->putInTube('wpt.installtest', "test");
         $jobStats = $pheanstalk->statsJob($id);
@@ -322,48 +318,6 @@ function CheckFfmpeg() {
     return $ret && $x264;
 }
 
-/**
-* Check to make sure ffmpeg-filters is installed and working
-*
-*/
-function CheckFfmpegFilters(&$info) {
-    $ret = false;
-    $command = "ffmpeg -version";
-    $retStr = exec($command, $output, $result);
-    $ver = 'Not Detected';
-    if (count($output)) {
-      foreach ($output as $line) {
-        if (preg_match('/^ffmpeg version (?P<ver>[^ ]+)/i', $line, $matches) && array_key_exists('ver', $matches)) {
-          $ver = $matches['ver'];
-        }
-      }
-    }
-
-    $command = "ffmpeg -filters";
-    $retStr = exec($command, $output, $result);
-    $fps = false;
-    $decimate = null;
-    $scale = false;
-    if (count($output)) {
-      foreach ($output as $line) {
-        if (preg_match('/scale.*V->V.*Scale the input video/', $line))
-          $scale = true;
-        if (preg_match('/(?P<filter>[mp]*decimate).*V->V.*Remove near-duplicate frames/', $line, $matches))
-          $decimate = $matches['filter'];
-      }
-    }
-
-    if ($scale && isset($decimate))
-      $ret = true;
-    $info = $ver;
-    if ($scale)
-      $info .= ',scale';
-    if (isset($decimate))
-      $info .= ",$decimate";
-
-    return $ret;
-}
-
 function CheckJpegTran() {
     $ret = false;
     $command = "jpegtran -h";
@@ -382,33 +336,12 @@ function CheckExifTool() {
     return $ret;
 }
 
-function CheckCompare() {
-    $ret = false;
-    $command = "compare -version";
-    $retStr = exec($command, $output, $result);
-    if ($result == 0)
-      $ret = true;
-    return $ret;
-}
-
 function CheckFreeType() {
   $ret = false;
   if (extension_loaded('gd')) {
     $gdinfo = gd_info();
     if(isset($gdinfo['FreeType Support']) && $gdinfo['FreeType Support'])
       $ret = true;
-  }
-  return $ret;
-}
-
-function CheckPythonVideo(&$info) {
-  $ret = CheckPythonVisualMetrics($failures);
-  if (!$ret) {
-    if (isset($failures)) {
-      $info = 'Missing Python modules: ' . implode(',', $failures);
-    } else {
-      $info = 'Error running "python video/visualmetrics.py -c"';
-    }
   }
   return $ret;
 }

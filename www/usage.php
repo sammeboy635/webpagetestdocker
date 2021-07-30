@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 set_time_limit(0);
 $admin = true;
@@ -19,21 +22,12 @@ if (isset($_REQUEST['f']) && $_REQUEST['f'] == 'json') {
 <?php
     if( array_key_exists('k', $_REQUEST) && strlen($_REQUEST['k']) ) {
         $key = trim($_REQUEST['k']);
-        $keys = parse_ini_file('./settings/keys.ini', true);
-
-        // Add the list of self-provisioned keys
-        $prefix = 'A';
-        if (is_file(__DIR__ . "/dat/{$prefix}_api_keys.db")) {
-          $db = new SQLite3(__DIR__ . "/dat/{$prefix}_api_keys.db");
-          $results = $db->query("SELECT key,email,key_limit FROM keys;");
-          if ($results){
-            while ($row = $results->fetchArray(SQLITE3_ASSOC)) {
-              $k = "$prefix.{$row['key']}";
-              $keys[$k] = array('contact' => $row['email'], 'limit' => $row['key_limit']);
-            }
-          }
-          $db->close();
-        }
+        $keys_file = __DIR__ . '/settings/keys.ini';
+        if (file_exists(__DIR__ . '/settings/common/keys.ini'))
+          $keys_file = __DIR__ . '/settings/common/keys.ini';
+        if (file_exists(__DIR__ . '/settings/server/keys.ini'))
+          $keys_file = __DIR__ . '/settings/server/keys.ini';
+        $keys = parse_ini_file($keys_file, true);
 
         if( $admin && $key == 'all' ) {
             if (!isset($_REQUEST['days']))

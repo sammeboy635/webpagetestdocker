@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 require_once(__DIR__ . '/devtools.inc.php');
 require_once(__DIR__ . '/include/TestPaths.php');
 require_once(__DIR__ . '/video/visualProgress.inc.php');
@@ -23,10 +26,11 @@ function loadAllPageData($testPath) {
     $completed = true;
     if ($testInfo && (!array_key_exists('completed', $testInfo) || !$testInfo['completed']))
       $completed = false;
+    if (file_exists("$testPath/test.complete"))
+      $completed = true;
 
-    for( $run = 1; $run <= $runs; $run++ ) {
-      // only load page data for individual runs that are complete (or if the whole test is complete)
-      if ($completed || !$testInfo || IsTestRunComplete($run, $testInfo)) {
+    if ($completed) {
+      for( $run = 1; $run <= $runs; $run++ ) {
         $data = loadPageRunData($testPath, $run, 0, $testInfo);
         if( isset($data) )
           $ret[$run][0] = $data;
@@ -56,17 +60,15 @@ function loadAllPageData($testPath) {
 function loadPageRunData($testPath, $run, $cached, $testInfo = null) {
   $ret = null;
   $localPaths = new TestPaths($testPath, $run, $cached);
-  $runCompleted = IsTestRunComplete($run, $testInfo);
-  return loadPageStepData($localPaths, $runCompleted, $testInfo);
+  return loadPageStepData($localPaths, $testInfo);
 }
 
 /**
  * @param TestPaths $localPaths Paths for the step or run to load the page data for
- * @param bool $runCompleted If the run that includes this step was completed or not
  * @param array|null $testInfo Optional testInfo to expose a test-level error
  * @return array|null Associative array with data for the given run or null on failure
  */
-function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
+function loadPageStepData($localPaths, $testInfo = null) {
   $cacheVer = 10;
   $cacheFile = $localPaths->pageDataCacheFile($cacheVer);
   $ret = null;
@@ -76,7 +78,7 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
       $ret = null;
     }
   }
-
+    
   if (!isset($ret) || !is_array($ret)) {
     $ret = loadPageData($localPaths->pageDataFile());
     if (!isset($ret) || !is_array($ret) || !count($ret))
@@ -97,7 +99,9 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
         }
       }
     }
-
+    //set top level FCP
+    TopLevelFCP($ret);
+    
     if (!empty($ret) && !$basic_results) {
       $startOffset = array_key_exists('testStartOffset', $ret) ? intval(round($ret['testStartOffset'])) : 0;
       loadUserTimingData($ret, $localPaths->userTimedEventsFile());
@@ -148,23 +152,6 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
           $ret['testTiming'] = $entries;
       }
 
-      // see if we have CSI metrics to load
-      if (GetSetting('enable_csi') && is_dir(__DIR__ . '/google') && is_file(__DIR__ . '/google/google_lib.inc')) {
-        require_once(__DIR__ . '/google/google_lib.inc');
-        $csi = ParseCsiInfoForStep($localPaths, true);
-        if (isset($csi) && is_array($csi) && count($csi)) {
-          $ret['CSI'] = array();
-          foreach($csi as $metric => $value) {
-            if (preg_match('/^[0-9]+$/', $value))
-              $value = intval($value);
-            elseif (preg_match('/^[0-9\.]+$/', $value))
-              $value = floatval($value);
-            $ret["CSI.$metric"] = $value;
-            $ret['CSI'][] = $metric;
-          }
-        }
-      }
-
       if (array_key_exists('loadTime', $ret) &&
         !$ret['loadTime'] &&
         array_key_exists('fullyLoaded', $ret) &&
@@ -198,7 +185,7 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
           !array_key_exists('lastVisualChange', $ret) || !$ret['lastVisualChange'] ||
           !array_key_exists('visualComplete85', $ret) || !$ret['visualComplete85'] ||
           !array_key_exists('visualComplete', $ret) || !$ret['visualComplete']) {
-        $progress = GetVisualProgressForStep($localPaths, $runCompleted, $startOffset);
+        $progress = GetVisualProgressForStep($localPaths, $startOffset);
         if (isset($progress) && is_array($progress)) {
           if (array_key_exists('SpeedIndex', $progress))
             $ret['SpeedIndex'] = $progress['SpeedIndex'];
@@ -247,14 +234,21 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
           $browser_version = floatval($ret['browser_version']);
         }
         $layout_shifts = array();
-        $user_timing = ParseUserTiming($localPaths->chromeUserTimingFile(), $browser_version, $layout_shifts);
+        $user_timing = ParseUserTiming($localPaths->chromeUserTimingFile(), $browser_version, $layout_shifts, $ret);
         if (isset($user_timing) && is_array($user_timing)) {
           $ret["chromeUserTiming"] = $user_timing;
           foreach($user_timing as $value) {
             $key = "chromeUserTiming.{$value['name']}";
             if (isset($value['time'])) {
-              if (!isset($ret[$key]) || $value['time'] > $ret[$key]) {
-                $ret[$key] = $value['time'];
+              // Prefer the earliest for "first" events and the latest for others
+              if (stripos($value['name'], 'first') === 0) {
+                if (!isset($ret[$key]) || $value['time'] < $ret[$key]) {
+                  $ret[$key] = $value['time'];
+                }
+              } else {
+                if (!isset($ret[$key]) || $value['time'] > $ret[$key]) {
+                  $ret[$key] = $value['time'];
+                }
               }
             } elseif (isset($value['value'])) {
               $ret[$key] = $value['value'];
@@ -263,6 +257,24 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
         }
         if (count($layout_shifts)) {
           $ret['LayoutShifts'] = $layout_shifts;
+
+          // Count the number of LayoutShifts before first paint
+          if (isset($ret['chromeUserTiming.TotalLayoutShift']) && isset($ret['chromeUserTiming.firstPaint'])) {
+            $count = 0;
+            $cls = 0;
+            $fraction = 0;
+            foreach ($ret['LayoutShifts'] as $shift) {
+              if (isset($shift['time']) && $shift['time'] <= $ret['chromeUserTiming.firstPaint']) {
+                $count++;
+                $cls = $shift['cumulative_score'];
+              }
+            }
+            if ($ret['chromeUserTiming.TotalLayoutShift'] > 0) {
+              $fraction = (float)$cls / (float)$ret['chromeUserTiming.TotalLayoutShift'];
+            }
+          }
+
+          $ret['LayoutShiftsBeforePaint'] = array('count' => $count, 'cumulative_score' => $cls, 'fraction_of_total' => $fraction);
         }
       }
 
@@ -291,8 +303,8 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
         $max_fid = null;
         if (isset($ret['render']) && $ret['render'] > 0)
           $seek_start = $ret['render'];
-        elseif (isset($ret['chromeUserTiming.firstContentfulPaint']) && $ret['chromeUserTiming.firstContentfulPaint'] > 0)
-          $seek_start = $ret['chromeUserTiming.firstContentfulPaint'];
+        elseif (isset($ret['firstContentfulPaint']) && $ret['firstContentfulPaint'] > 0)
+          $seek_start = $ret['firstContentfulPaint'];
         elseif (isset($ret['firstPaint']) && $ret['firstPaint'] > 0)
           $seek_start = $ret['firstPaint'];
         $DCL = null;
@@ -447,6 +459,19 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
       }
     }
 
+    // Add the crux data
+    $crux_file = $localPaths->cruxJsonFile();
+    if (gz_is_file($crux_file)) {
+      $crux_data = json_decode(gz_file_get_contents($crux_file), true);
+      if (isset($crux_data) && is_array($crux_data)) {
+        if (isset($crux_data['record'])) {
+          $ret['CrUX'] = $crux_data['record'];
+        } else {
+          $ret['CrUX'] = $crux_data;
+        }
+      }
+    }
+
     // see if there is test-level lighthouse data to attach
     // Don't cache the lighthouse bit because the file may come in after other results are cached
     $lighthouse_audits_file = $localPaths->lighthouseAuditsFile();
@@ -489,31 +514,10 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
       }
     }
   }
-
-  $hero_elements_file = $localPaths->heroElementsJsonFile();
-  if (gz_is_file($hero_elements_file)) {
-    $hero_elements = json_decode(gz_file_get_contents($hero_elements_file), true);
-    if ($hero_elements) {
-      $ret['heroElements'] = array();
-      $ret['heroElementTimes'] = array();
-      if (isset($hero_elements['heroes'])) {
-        $ret['heroElements'] = $hero_elements['heroes'];
-      }
-      if (isset($hero_elements['timings'])) {
-        foreach ($hero_elements['timings'] as $timing) {
-          if (isset($timing['value'])) {
-            $ret['heroElementTimes'][$timing['name']] = $timing['value'];
-            $ret["heroElementTimes.{$timing['name']}"] = $timing['value'];
-          }
-        }
-      }
-
-      foreach (['FirstPaintedHero', 'LastPaintedHero'] as $metric) {
-        if (isset($ret['heroElementTimes'][$metric])) {
-          $ret[$metric] = $ret['heroElementTimes'][$metric];
-        }
-      }
-    }
+  
+  // set top level FCP in case page data was already cached
+  if (!isset($ret['firstContentfulPaint'])) {
+    TopLevelFCP($ret);
   }
 
   if (isset($ret['fullyLoaded']))
@@ -522,6 +526,9 @@ function loadPageStepData($localPaths, $runCompleted, $testInfo = null) {
   if (empty($ret))
     $ret = null;
 
+  if (isset($ret) && is_array($ret) && isset($testInfo) && is_array($testInfo) && isset($testInfo['id'])) {
+    $ret['testID'] = $testInfo['id'];
+  }
   return $ret;
 }
 
@@ -584,7 +591,6 @@ function loadPageData($file)
                                 'optimization_checked' => @(int)$fields[71],
                                 'aft' => @(int)$fields[72],
                                 'domElements' => @(int)$fields[73],
-                                'pageSpeedVersion' => @trim($fields[74]),
                                 'title' => @htmlspecialchars(trim($fields[75]),ENT_NOQUOTES,'UTF-8'),
                                 'titleTime' => @(int)$fields[76],
                                 'loadEventStart' => @(int)$fields[77],
@@ -624,9 +630,6 @@ function loadPageData($file)
                 if ((isset($fields[106]) && strlen(trim($fields[106])))) $ret['certificate_bytes'] = intval(trim($fields[106]));
 
                 $ret['date'] = strtotime(trim($fields[0]) . ' ' . trim($fields[1]));
-                if (!strlen($ret['pageSpeedVersion']))
-                    $ret['pageSpeedVersion'] = '1.9';
-
                 break;
             }
         }
@@ -987,7 +990,7 @@ function CompareTimestamps($a, $b) {
   return ($a['ts'] < $b['ts']) ? -1 : 1;
 }
 
-function ParseUserTiming($file, $browser_version, &$layout_shifts) {
+function ParseUserTiming($file, $browser_version, &$layout_shifts, &$page_data) {
   $user_timing = null;
   $events = json_decode(gz_file_get_contents($file), true);
   if (isset($events) && is_array($events)) {
@@ -1068,14 +1071,38 @@ function ParseUserTiming($file, $browser_version, &$layout_shifts) {
             if (isset($time)) {
               $event['time'] = $time;
               $largest[$name] = $event;
+              if (!isset($page_data['largestPaints'])) {
+                $page_data['largestPaints'] = [];
+              }
+              $paint_event = array('event' => $name, 'time' => $time, 'size' => $event['args']['data']['size']);
+              if (isset($event['args']['data']['DOMNodeId'])) {
+                $paint_event['DOMNodeId'] = $event['args']['data']['DOMNodeId'];
+              }
+              if (isset($event['args']['data']['node'])) {
+                $paint_event['nodeInfo'] = $event['args']['data']['node'];
+              }
+              if (isset($event['args']['data']['element'])) {
+                $paint_event['element'] = $event['args']['data']['element'];
+              }
+              if (isset($event['args']['data']['type'])) {
+                $paint_event['type'] = $event['args']['data']['type'];
+              }
+              $page_data['largestPaints'][] = $paint_event;
             }
           }
         }
       }
 
-      $cumulative_layout_shift = null;
+      $total_layout_shift = null;
+
+      $max_layout_window = 0;
+      $firstShift = 0;
+      $prevShift = 0;
+      $curr = 0;
+      $shiftWindowCount = 0;
+
       if (isset($browser_version) && $browser_version >= 81) {
-        $cumulative_layout_shift = 0.0;
+        $total_layout_shift = 0.0;
         foreach ($events as $event) {
           if (is_array($event) &&
               isset($event['name']) &&
@@ -1100,12 +1127,36 @@ function ParseUserTiming($file, $browser_version, &$layout_shifts) {
             if ($name == "LayoutShift" &&
                 isset($event['args']['data']['is_main_frame']) &&
                 $event['args']['data']['is_main_frame'] &&
-                isset($event['args']['data']['cumulative_score'])) {
-              $cumulative_layout_shift = $event['args']['data']['cumulative_score'];
+                isset($event['args']['data']['score'])) {
               if (isset($time)) {
-                $shift = array('time' => $time, 'cumulative_score' => $event['args']['data']['cumulative_score']);
-                if (isset($event['args']['data']['score'])) {
-                  $shift['score'] = $event['args']['data']['score'];
+                if (!isset($total_layout_shift)) {
+                  $total_layout_shift = 0;
+                }
+                $total_layout_shift += $event['args']['data']['score'];
+
+                if (($time - $firstShift > 5000) || ($time - $prevShift > 1000)) {
+                  //new shift window
+                  $firstShift = $time;
+                  $curr = 0;
+                  $shiftWindowCount++;
+                }
+                $prevShift = $time;
+                $curr += $event['args']['data']['score'];
+                $max_layout_window = max($curr, $max_layout_window);
+
+                $shift = array(
+                  'time' => $time,
+                  'score' => $event['args']['data']['score'],
+                  'cumulative_score' => $total_layout_shift,
+                  'window_score' => $curr,
+                  'shift_window_num' => $shiftWindowCount
+                );
+
+                if (isset($event['args']['data']['region_rects'])) {
+                  $shift['rects'] = $event['args']['data']['region_rects'];
+                }
+                if (isset($event['args']['data']['sources'])) {
+                  $shift['sources'] = $event['args']['data']['sources'];
                 }
                 $layout_shifts[] = $shift;
               }
@@ -1120,8 +1171,43 @@ function ParseUserTiming($file, $browser_version, &$layout_shifts) {
       foreach ($largest as $name => $event) {
         $user_timing[] = array('name' => $event['name'], 'time' => $event['time']);
       }
-      if (isset($cumulative_layout_shift)) {
-        $user_timing[] = array('name' => 'CumulativeLayoutShift', 'value' => $cumulative_layout_shift);
+      if (isset($largest['LargestContentfulPaint'])) {
+        $event = $largest['LargestContentfulPaint'];
+        if (isset($event['args']['data']['type'])) {
+          $page_data['LargestContentfulPaintType'] = $event['args']['data']['type'];
+          // For images, extract the URL if there is one
+          if ($event['args']['data']['type'] == 'image' && isset($page_data['largestPaints'])) {
+            foreach ($page_data['largestPaints'] as $paint_event) {
+              if ($paint_event['event'] == 'LargestImagePaint' && $paint_event['time'] == $event['time']) {
+                if (isset($paint_event['nodeInfo']['nodeType'])) {
+                  $page_data['LargestContentfulPaintNodeType'] = $paint_event['nodeInfo']['nodeType'];
+                }
+                if (isset($paint_event['nodeInfo']['sourceURL'])) {
+                  $page_data['LargestContentfulPaintImageURL'] = $paint_event['nodeInfo']['sourceURL'];
+                } elseif (isset($paint_event['nodeInfo']['styles']['background-image'])) {
+                  if (preg_match('/url\("?\'?([^"\'\)]+)/', $paint_event['nodeInfo']['styles']['background-image'], $matches)) {
+                    $page_data['LargestContentfulPaintType'] = 'background-image';
+                    $page_data['LargestContentfulPaintImageURL'] = $matches[1];
+                  }
+                }
+              }
+            }
+          } else {
+            foreach ($page_data['largestPaints'] as $paint_event) {
+              if ($paint_event['event'] == 'LargestTextPaint' && $paint_event['time'] == $event['time']) {
+                if (isset($paint_event['nodeInfo']['nodeType'])) {
+                  $page_data['LargestContentfulPaintNodeType'] = $paint_event['nodeInfo']['nodeType'];
+                }
+              }
+            }
+          }
+        }
+      }
+      if (isset($total_layout_shift)) {
+        $user_timing[] = array('name' => 'TotalLayoutShift', 'value' => $total_layout_shift);
+      }
+      if (isset($max_layout_window)) {
+        $user_timing[] = array('name' => 'CumulativeLayoutShift', 'value' => $max_layout_window);
       }
     }
   }
@@ -1259,5 +1345,21 @@ function CalculateTimeToInteractive($localPaths, $startTime, $interactiveWindows
   }
   
   return $TTI;
+}
+
+/**
+* Set a top-level FCP metric
+* 
+* @param mixed pageData
+*/
+function TopLevelFCP(&$pageData) {
+  // set a top level firstContentfulPaint metric
+  if (isset($pageData) && is_array($pageData) &&
+  !isset($pageData['firstContentfulPaint'])) {
+    if (isset($pageData['chromeUserTiming.firstContentfulPaint']))
+      $pageData['firstContentfulPaint'] = $pageData['chromeUserTiming.firstContentfulPaint'];
+    elseif (isset($pageData['PerformancePaintTiming.first-contentful-paint']))
+      $pageData['firstContentfulPaint'] = $pageData['PerformancePaintTiming.first-contentful-paint'];
+  }
 }
 ?>

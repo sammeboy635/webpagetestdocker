@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 $DevToolsCacheVersion = '1.7';
 require_once __DIR__ . '/include/TestPaths.php';
 
@@ -1355,28 +1358,6 @@ function DevToolsGetVideoOffset($testPath, $run, $cached, &$endTime) {
 function DevToolsGetCPUSlicesForStep($localPaths) {
   $slices = null;
   $slices_file = $localPaths->devtoolsCPUTimelineFile() . ".gz";
-  $trace_file = $localPaths->devtoolsTraceFile() . ".gz";
-  $script_timing = $localPaths->devtoolsScriptTimingFile() . ".gz";
-  if (!GetSetting('disable_timeline_processing') && !is_file($slices_file) && is_file($trace_file) && is_file(__DIR__ . '/lib/trace/trace-parser.py')) {
-    $script = realpath(__DIR__ . '/lib/trace/trace_parser.py');
-    touch($slices_file);
-    if (is_file($slices_file)) {
-      $slices_file = realpath($slices_file);
-      unlink($slices_file);
-    }
-    $user_timing = $localPaths->chromeUserTimingFile() . ".gz";
-    touch($user_timing);
-    if (is_file($user_timing)) {
-      $user_timing = realpath($user_timing);
-      unlink($user_timing);
-    }
-    $trace_file = realpath($trace_file);
-
-    $command = "python \"$script\" -t \"$trace_file\" -u \"$user_timing\" -c \"$slices_file\" -j \"$script_timing\" 2>&1";
-    exec($command, $output, $result);
-    if (!is_file($slices_file))
-      touch($slices_file);
-  }
   if (gz_is_file($slices_file))
     $slices = json_decode(gz_file_get_contents($slices_file), true);
   if (isset($slices) && !is_array($slices))
@@ -1415,8 +1396,7 @@ function GetDevToolsCPUTime($testPath, $run, $cached, $endTime = 0) {
 function GetDevToolsCPUTimeForStep($localPaths, $endTime = 0) {
   if (!$endTime) {
     require_once(__DIR__ . '/page_data.inc');
-    $runCompleted = IsTestRunComplete($localPaths->getRunNumber(), $testInfo);
-    $pageData =  loadPageStepData($localPaths, $runCompleted);
+    $pageData =  loadPageStepData($localPaths);
     if (isset($pageData) && is_array($pageData) && isset($pageData['fullyLoaded'])) {
       $endTime = $pageData['fullyLoaded'];
     }

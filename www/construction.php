@@ -1,13 +1,16 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
 		<title>WebPageTest - Under Construction</title>
         <?php $gaTemplate = 'Construction'; include ('head.inc'); ?>
     </head>
-	<body>
+	<body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
         <div class="page">
             <?php
             $tab = 'Home';

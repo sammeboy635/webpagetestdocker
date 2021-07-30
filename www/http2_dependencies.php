@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 require_once('object_detail.inc');
 require_once('page_data.inc');
@@ -18,6 +21,23 @@ $parents = array();
 $styles = array();
 
 $row_data = array();
+
+// Pre-scan the requests to see if a given connection has multiple hosts coalesced
+$connection_hosts = array();
+foreach ($requests as $request) {
+  if (isset($request['socket']) &&
+      isset($request['http2_stream_id']) &&
+      isset($request['host']) &&
+      isset($request['url'])) {
+    $connection = strval($request['socket']);
+    if (!isset($connection_hosts[$connection])) {
+      $connection_hosts[$connection] = array($request['host']);
+    } elseif (!in_array($request['host'], $connection_hosts[$connection])) {
+      $connection_hosts[$connection][] = $request['host'];
+    }
+  }
+}
+
 foreach ($requests as $request) {
   if (isset($request['socket']) &&
       isset($request['http2_stream_id']) &&
@@ -27,11 +47,15 @@ foreach ($requests as $request) {
 
     if (!isset($connections[$connection])) {
       // Create the root entry for this connection
-      $connections[$connection] = $request['host'];
-      $label = $request['host'];
+      if (isset($connection_hosts[$connection])){
+        $connections[$connection] = implode(",", $connection_hosts[$connection]);
+      } else {
+        $connections[$connection] = $request['host'];
+      }
+      $label = $connections[$connection];
       if (isset($request['ip_addr']))
         $label .= "<br>({$request['ip_addr']})";
-      $tooltip = $request['host'];
+      $tooltip = $connections[$connection];
       $data = array("v" => $connection, "f" => $label);
       $row = array($data, "", $tooltip);
       $row_data[] = $row;
@@ -124,7 +148,7 @@ function get_short_path($path) {
 
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
     <style type="text/css">
       .chart_node {
@@ -163,7 +187,7 @@ function get_short_path($path) {
       }
     </script>
     </head>
-    <body>
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
     <div id="chart_div"></div>
     </body>
 </html>

@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 
 require_once __DIR__ . '/include/TestInfo.php';
@@ -34,19 +37,39 @@ if (array_key_exists('f', $_REQUEST) && $_REQUEST['f'] == 'json') {
 
 
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest Domain Breakdown<?php echo $testLabel; ?></title>
         <?php $gaTemplate = 'Domain Breakdown'; include ('head.inc'); ?>
         <style type="text/css">
+            div.tableRequests table {
+              max-width: 300px;
+              vertical-align:top;
+            }
+
+            div.tableBytes table {
+              max-width: 300px;
+              vertical-align:top;
+            }
+
             td {
                 text-align:center;
                 vertical-align:middle;
                 padding:1em;
             }
 
+            div.tableRequests td {
+                max-width: 250px;
+                text-align: left;
+            }
+
+            div.tableBytes td {
+                max-width: 250px;
+                text-align: left;
+            }
+
             div.bar {
-                height:12px;
+                height:20px;
                 margin-top:auto;
                 margin-bottom:auto;
             }
@@ -73,8 +96,7 @@ if (array_key_exists('f', $_REQUEST) && $_REQUEST['f'] == 'json') {
             ?>
         </style>
     </head>
-    <body>
-        <div class="page">
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
             <?php
             $tab = 'Test Result';
             $subtab = 'Domains';
@@ -123,6 +145,7 @@ if (array_key_exists('f', $_REQUEST) && $_REQUEST['f'] == 'json') {
                 }
               }
             ?>
+            </div>
 
             <?php include('footer.inc'); ?>
         </div>
