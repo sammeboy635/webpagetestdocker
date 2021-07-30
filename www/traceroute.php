@@ -1,29 +1,37 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 
 // load the secret key (if there is one)
-$secret = '';
-$keys = parse_ini_file('./settings/keys.ini', true);
-if( $keys && isset($keys['server']) && isset($keys['server']['secret']) )
-  $secret = trim($keys['server']['secret']);
+$secret = GetServerSecret();
+if (!isset($secret))
+    $secret = '';
 
-$connectivity = parse_ini_file('./settings/connectivity.ini', true);
+$connectivity_file = './settings/connectivity.ini.sample';
+if (file_exists('./settings/connectivity.ini'))
+    $connectivity_file = './settings/connectivity.ini';
+if (file_exists('./settings/common/connectivity.ini'))
+    $connectivity_file = './settings/common/connectivity.ini';
+if (file_exists('./settings/server/connectivity.ini'))
+    $connectivity_file = './settings/server/connectivity.ini';
+$connectivity = parse_ini_file($connectivity_file, true);
 $locations = LoadLocations();
 $loc = ParseLocations($locations);
 $page_keywords = array('Traceroute','WebPageTest','Website Speed Test','Test');
 $page_description = "Test network path from multiple locations around the world (traceroute).";
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest - Traceroute diagnostic</title>
         <?php $gaTemplate = 'Traceroute'; include ('head.inc'); ?>
     </head>
-    <body>
-        <div class="page">
+    <body class="home<?php if ($COMPACT_MODE) {echo ' compact';} ?>">
             <?php
             $siteKey = GetSetting("recaptcha_site_key", "");
-            if (!isset($uid) && !isset($user) && !isset($this_user) && strlen($siteKey)) {
+            if (!isset($uid) && !isset($user) && !isset($USER_EMAIL) && strlen($siteKey)) {
               echo "<script src=\"https://www.google.com/recaptcha/api.js\" async defer></script>\n";
               ?>
               <script>
@@ -41,6 +49,7 @@ $page_description = "Test network path from multiple locations around the world 
             $tab = 'Home';
             include 'header.inc';
             ?>
+            <h1 class="attention">Test. Optimize. Repeat.</h1>
             <form name="urlEntry" id="urlEntry" action="/runtest.php" method="POST" enctype="multipart/form-data" onsubmit="return ValidateInput(this)">
 
             <input type="hidden" name="type" value="traceroute">
@@ -60,22 +69,41 @@ $page_description = "Test network path from multiple locations around the world 
             }
             ?>
 
-            <h2 class="cufon-dincond_black">Run an ICMP traceroute from one of the test agents...</h2>
 
             <div id="test_box-container">
                 <ul class="ui-tabs-nav">
-                    <li class="analytical_review"><a href="/">Advanced Testing</a></li>
+                    <li class="analytical_review"><a href="/"><?php echo file_get_contents('./images/icon-advanced-testing.svg'); ?>Advanced Testing</a></li>
                     <?php
-                    if (is_file(__DIR__ . '/settings/profiles.ini')) {
-                      echo "<li class=\"easy_mode\"><a href=\"/easy.php\">Simple Testing</a></li>";
+                    if (file_exists(__DIR__ . '/settings/profiles_webvitals.ini') ||
+                            file_exists(__DIR__ . '/settings/common/profiles_webvitals.ini') ||
+                            file_exists(__DIR__ . '/settings/server/profiles_webvitals.ini')) {
+                        echo "<li class=\"vitals\"><a href=\"/webvitals\">";
+                        echo file_get_contents('./images/icon-webvitals-testing.svg');
+                        echo "Web Vitals</a></li>";
+                    }
+                    if (file_exists(__DIR__ . '/settings/profiles.ini') ||
+                        file_exists(__DIR__ . '/settings/common/profiles.ini') ||
+                        file_exists(__DIR__ . '/settings/server/profiles.ini')) {
+                        echo "<li class=\"easy_mode\"><a href=\"/easy\">";
+                        echo file_get_contents('./images/icon-simple-testing.svg');
+                        echo "Simple Testing</a></li>";
                     }
                     ?>
-                    <li class="visual_comparison"><a href="/video/">Visual Comparison</a></li>
-                    <li class="traceroute ui-state-default ui-corner-top ui-tabs-selected ui-state-active"><a href="#">Traceroute</a></li>
+                    <li class="visual_comparison"><a href="/video/"><?php echo file_get_contents('./images/icon-visual-comparison.svg'); ?>Visual Comparison</a></li>
+                    <li class="traceroute ui-state-default ui-corner-top ui-tabs-selected ui-state-active"><a href="#"><?php echo file_get_contents('./images/icon-traceroute.svg'); ?>Traceroute</a></li>
                 </ul>
                 <div id="analytical-review" class="test_box">
                     <ul class="input_fields">
-                        <li><input type="text" name="url" id="url" value="Host Name/IP Address" class="text large" onfocus="if (this.value == this.defaultValue) {this.value = '';}" onblur="if (this.value == '') {this.value = this.defaultValue;}" onkeypress="if (event.keyCode == 32) {return false;}"></li>
+                        <li>
+                        <label for="url" class="vis-hidden">Enter URL to test</label>    
+                        <input type="text" name="url" id="url" required placeholder="Host Name/IP Address" class="text large" onkeypress="if (event.keyCode == 32) {return false;}">
+                        <?php
+                            if (strlen($siteKey)) {
+                                echo "<button data-sitekey=\"$siteKey\" data-callback='onRecaptchaSubmit' class=\"g-recaptcha start_test\">Start Test &#8594;</button>";
+                            } else {
+                                echo '<input type="submit" name="submit" value="Start Test &#8594;" class="start_test">';
+                            }
+                            ?></li>
                         <li>
                             <label for="location">Test Location</label>
                             <select name="where" id="location">
@@ -90,8 +118,8 @@ $page_description = "Test network path from multiple locations around the world 
                                 }
                                 ?>
                             </select>
-                            <?php if( $settings['map'] ) { ?>
-                            <input id="change-location-btn" type=button onclick="SelectLocation();" value="Change">
+                            <?php if( GetSetting('map') ) { ?>
+                            <input id="change-location-btn" type=button onclick="SelectLocation();" value="Select from Map">
                             <?php } ?>
                             <span class="pending_tests hidden" id="pending_tests"><span id="backlog">0</span> Pending Tests</span>
                             <span class="cleared"></span>
@@ -126,26 +154,13 @@ $page_description = "Test network path from multiple locations around the world 
                         <li>
                             <label for="number_of_tests">
                                 Number of Tests to Run<br>
-                                <small>Up to <?php echo $settings['maxruns']; ?></small>
+                                <small>Up to <?php echo GetSetting('maxruns', 9); ?></small>
                             </label>
                             <input id="number_of_tests" type="number"  class="text short" name="runs" value="3">
                         </li>
                     </ul>
                 </div>
             </div>
-
-            <div id="start_test-container">
-                <?php
-                if (strlen($siteKey)) {
-                  echo "<p><button data-sitekey=\"$siteKey\" data-callback='onRecaptchaSubmit' class=\"g-recaptcha start_test\"></button></p>";
-                } else {
-                  echo '<p><input type="submit" name="submit" value="" class="start_test"></p>';
-                }
-                ?>
-                <div id="sponsor">
-                </div>
-            </div>
-            <div class="cleared"></div>
 
             <div id="location-dialog" style="display:none;">
                 <h3>Select Test Location</h3>
@@ -168,31 +183,22 @@ $page_description = "Test network path from multiple locations around the world 
                 </p>
             </div>
             </form>
-
+            <?php
+            include(__DIR__ . '/include/home-subsections.inc');
+            ?>
             <?php include('footer.inc'); ?>
         </div>
 
         <script type="text/javascript">
         <?php
-            echo "var maxRuns = {$settings['maxruns']};\n";
+            $max_runs = GetSetting('maxruns', 9);
+            echo "var maxRuns = $max_runs;\n";
             echo "var locations = " . json_encode($locations) . ";\n";
             echo "var connectivity = " . json_encode($connectivity) . ";\n";
             $maps_api_key = GetSetting('maps_api_key');
             if ($maps_api_key) {
                 echo "var mapsApiKey = '$maps_api_key';";
             }
-
-            $sponsors = parse_ini_file('./settings/sponsors.ini', true);
-            foreach( $sponsors as &$sponsor )
-            {
-              if( strlen($GLOBALS['cdnPath']) && isset($sponsor['logo']) )
-                $sponsor['logo'] = $GLOBALS['cdnPath'] . $sponsor['logo'];
-              $offset = 0;
-              if( $sponsor['index'] )
-                $offset = -40 * $sponsor['index'];
-              $sponsor['offset'] = $offset;
-            }
-            echo "var sponsors = " . @json_encode($sponsors) . ";\n";
         ?>
         </script>
         <script type="text/javascript" src="<?php echo $GLOBALS['cdnPath']; ?>/js/test.js?v=<?php echo VER_JS_TEST;?>"></script>
@@ -213,13 +219,6 @@ function LoadLocations()
     // strip out any sensitive information
     foreach( $locations as $index => &$loc )
     {
-        // count the number of tests at each location
-        if( isset($loc['localDir']) )
-        {
-            $loc['backlog'] = CountTests($loc['localDir']);
-            unset( $loc['localDir'] );
-        }
-
         if( isset($loc['key']) )
             unset( $loc['key'] );
         if( isset($loc['remoteDir']) )

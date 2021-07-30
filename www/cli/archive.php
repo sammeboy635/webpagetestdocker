@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 chdir('..');
 $MIN_DAYS = 2;
 
@@ -18,19 +21,19 @@ if (!isset($lock)) {
 }
 
 $archive_kept_days = null;
-if (array_key_exists('archive_kept_days', $settings) && is_numeric($settings['archive_kept_days'])) {
-  $archive_kept_days = $settings['archive_kept_days'];
+if (GetSetting('archive_kept_days')) {
+  $archive_kept_days = GetSetting('archive_kept_days');
 }
 
-if (array_key_exists('archive_days', $settings)) {
-    $MIN_DAYS = $settings['archive_days'];
+if (GetSetting('archive_days')) {
+    $MIN_DAYS = GetSetting('archive_days');
 }
 $MIN_DAYS = max($MIN_DAYS,0.1);
 $MAX_DAYS = 30;
 
 $archive_dir = null;
-if (array_key_exists('archive_dir', $settings)) {
-    $archive_dir = $settings['archive_dir'];
+if (GetSetting('archive_dir')) {
+    $archive_dir = GetSetting('archive_dir');
 }
 
 $kept = 0;
@@ -50,8 +53,8 @@ $UTC = new DateTimeZone('UTC');
 $now = time();
 
 if ((isset($archive_dir) && strlen($archive_dir)) ||
-  (array_key_exists('archive_url', $settings) && strlen($settings['archive_url'])) ||
-  (array_key_exists('archive_s3_server', $settings) && strlen($settings['archive_s3_server']))) {
+    GetSetting('archive_url') ||
+    GetSetting('archive_s3_server')) {
   CheckRelay();
   CheckOldDir('./results/old');
 
@@ -73,10 +76,10 @@ if ((isset($archive_dir) && strlen($archive_dir)) ||
               CheckDay($dayDir, "$year$month$day", $elapsedDays, $forced_only);
             }
           }
-          rmdir($monthDir);
+          @rmdir($monthDir);
         }
       }
-      rmdir($yearDir);
+      @rmdir($yearDir);
     }
   }
 }
@@ -95,13 +98,13 @@ if (isset($archive_kept_days) && isset($archive_dir) && strlen($archive_dir)) {
             $dayDir = "$monthDir/$day";
             if (is_numeric($day) && is_dir($dayDir) && ElapsedDays($year, $month, $day) > $archive_kept_days) {
               DeleteArchivedFiles($dayDir);
-              rmdir($dayDir);
+              @rmdir($dayDir);
             }
           }
-          rmdir($monthDir);
+          @rmdir($monthDir);
         }
       }
-      rmDir($yearDir);
+      @rmDir($yearDir);
     }
   }
 }
@@ -126,7 +129,7 @@ function DeleteArchivedFiles($dir) {
           $archivesDeletedCount++;
         } else {
           DeleteArchivedFiles($absoulutePath);
-          rmdir($absoulutePath);
+          @rmdir($absoulutePath);
         }
       }
     }
@@ -139,7 +142,12 @@ function DeleteArchivedFiles($dir) {
 */
 function CheckRelay() {
   $dirs = scandir('./results/relay');
-  $keys = parse_ini_file('./settings/keys.ini');
+  $keys_file = __DIR__ . '/settings/keys.ini';
+  if (file_exists(__DIR__ . '/settings/common/keys.ini'))
+    $keys_file = __DIR__ . '/settings/common/keys.ini';
+  if (file_exists(__DIR__ . '/settings/server/keys.ini'))
+    $keys_file = __DIR__ . '/settings/server/keys.ini';
+  $keys = parse_ini_file($keys_file);
   foreach($dirs as $key) {
     if ($key != '.' && $key != '..') {
       $keydir = "./results/relay/$key";
@@ -168,24 +176,29 @@ function CheckRelay() {
                             }
                           }
                         } else {
+                          // More than 10 days old
                           delTree($monthDir);
                         }
                       } else {
+                        // Not Numeric
                         delTree($monthDir);
                       }
                       @rmdir($monthDir);
                     }
                   }
                 } else {
+                  // More than 10 days old
                   delTree($yearDir);
                 }
               } else {
+                // Not Numeric
                 delTree($yearDir);
               }
               @rmdir($yearDir);
             }
           }
         } else {
+          // Invalid key
           delTree($keydir);
         }
         @rmdir($keydir);
@@ -202,17 +215,19 @@ function CheckRelay() {
 * @param mixed $path
 */
 function CheckOldDir($path) {
-  $oldDirs = scandir($path);
-  foreach( $oldDirs as $oldDir ) {
-    if( $oldDir != '.' && $oldDir != '..' ) {
-      // see if it is a test or a higher-level directory
-      if( is_file("$path/$oldDir/testinfo.ini") )
-        CheckTest("$path/$oldDir", $oldDir, 1000, FALSE);
-      else
-        CheckOldDir("$path/$oldDir");
+  if (is_dir($path)) {
+    $oldDirs = scandir($path);
+    foreach( $oldDirs as $oldDir ) {
+      if( $oldDir != '.' && $oldDir != '..' ) {
+        // see if it is a test or a higher-level directory
+        if( is_file("$path/$oldDir/testinfo.ini") )
+          CheckTest("$path/$oldDir", $oldDir, 1000, FALSE);
+        else
+          CheckOldDir("$path/$oldDir");
+      }
     }
+    @rmdir($path);
   }
-  @rmdir($path);
 }
 
 /**
@@ -257,18 +272,19 @@ function CheckTest($testPath, $id, $elapsedDays, $forced_only) {
   global $kept;
   global $log;
   global $MIN_DAYS;
-  global $MAX_DAYS;
   $logLine = "$id ($elapsedDays): ";
 
   echo "\rArc:$archiveCount, Del:$deleted, Kept:$kept, Checking:" . str_pad($id,45);
 
   $delete = false;
-  if ($elapsedDays > $MAX_DAYS) {
-    $logLine .= "Old test, deleting";
-    $delete = true;
+  if (is_file("$testPath/test.waiting")) {
+    // Skip tests that are still queued
+  } elseif (is_file("$testPath/test.running")) {
+    // Skip tests that are still running
   } elseif (!is_file("$testPath/testinfo.ini") &&
       !is_file("$testPath/testinfo.json.gz") &&
       !is_file("$testPath/testinfo.json")) {
+    $logLine .= "Invalid test";
     $delete = true;
   } else {
     $needs_archive = is_file("$testPath/archive.me");
@@ -278,39 +294,31 @@ function CheckTest($testPath, $id, $elapsedDays, $forced_only) {
       $elapsed = TestLastAccessed($id);
       if (isset($elapsed)) {
         $logLine .= "Last Accessed $elapsed days";
-        if ($elapsed >= 0.5) {
+        if ($elapsed >= $MIN_DAYS) {
           $needs_archive = true;
           $logLine .= " Archiving";
         }
-      } else {
-        $delete = true;
       }
     }
     if ($needs_archive) {
       if (ArchiveTest($id) ) {
         $archiveCount++;
-        $logLine .= "Archived";
+        $logLine .= " Archived";
         $delete = true;
-        usleep(1000);
-      } else if ($elapsed < 60) {
-        $status = GetTestStatus($id, true);
-        $logLine .= " status {$status['statusCode']}";
-        if ($status['statusCode'] >= 400 ||
-            ($status['statusCode'] == 102 &&
-             $status['remote'] &&
-             $elapsed > 1)) {
-          $delete = true;
-        }
       } else {
-        $logLine .= "Failed to archive";
+        $logLine .= " Failed to archive";
       }
     }
   }
 
   if ($delete) {
-    delTree("$testPath/");
-    $deleted++;
-    $logLine .= " Deleted";
+    if (VerifyArchive($id) && is_file("$testPath/.archived")) {
+      delTree("$testPath/");
+      $deleted++;
+      $logLine .= " Deleted";
+    } else {
+      $logLine .= " Verification Failed";
+    }
   } else {
     $kept++;
   }
@@ -332,5 +340,4 @@ function ElapsedDays($year, $month, $day) {
   $elapsed = max($now - $daytime, 0) / 86400;
   return $elapsed;
 }
-
 ?>

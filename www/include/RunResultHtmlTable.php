@@ -1,9 +1,12 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 require_once __DIR__ . '/../common_lib.inc';
 
 class RunResultHtmlTable {
-  const SPEED_INDEX_URL = "https://github.com/WPO-Foundation/webpagetest-docs/blob/master/user/Metrics/SpeedIndex.md";
+  const SPEED_INDEX_URL = "https://docs.webpagetest.org/metrics/speedindex/";
 
   const COL_LABEL = "label";
   const COL_START_RENDER = "render";
@@ -14,7 +17,7 @@ class RunResultHtmlTable {
   const COL_RESULT = "result";
   const COL_COST = "cost";
   const COL_CERTIFICATE_BYTES = "certificate_bytes";
-  const COL_FIRST_CONTENTFUL_PAINT = 'chromeUserTiming.firstContentfulPaint';
+  const COL_FIRST_CONTENTFUL_PAINT = 'firstContentfulPaint';
   const COL_LARGEST_CONTENTFUL_PAINT = 'chromeUserTiming.LargestContentfulPaint';
   const COL_CUMULATIVE_LAYOUT_SHIFT = 'chromeUserTiming.CumulativeLayoutShift';
   const COL_TOTAL_BLOCKING_TIME = 'TotalBlockingTime';
@@ -103,10 +106,11 @@ class RunResultHtmlTable {
   }
 
   public function create() {
-    $out = '<table id="tableResults" class="pretty" align="center" border="1" cellpadding="10" cellspacing="0">' . "\n";
+    $out = '<div class="scrollableTable">';
+    $out .= '<table id="tableResults" class="pretty" align="center" border="1" cellpadding="10" cellspacing="0">' . "\n";
     $out .= $this->_createHead();
     $out .= $this->_createBody();
-    $out .= "</table>\n";
+    $out .= "</table></div>\n";
     return $out;
   }
 
@@ -116,6 +120,10 @@ class RunResultHtmlTable {
     $out .= $this->_headCell("", "empty", $colspan);
 
     // Count the web vitals metrics that we have
+    $test_id = $this->testInfo->getId();
+    $run = $this->runResults->getRunNumber();
+    $cached = $this->runResults->isCachedRun() ? '1' : '0';
+    $vitals_url = htmlspecialchars("/vitals.php?test=$test_id&run=$run&cached=$cached");
     $vitals_count = 0;
     if ($this->isColumnEnabled(self::COL_LARGEST_CONTENTFUL_PAINT)) {
       $vitals_count++;
@@ -127,7 +135,7 @@ class RunResultHtmlTable {
       $vitals_count++;
     }
     if ($vitals_count > 0) {
-      $out .= $this->_headCell('<a href="https://web.dev/vitals/">Web Vitals</a>', "border", $vitals_count);
+      $out .= $this->_headCell("<a href='$vitals_url'>Web Vitals</a>", "border", $vitals_count);
     }
     $out .= $this->_headCell("Document Complete", "border", 3);
     $out .= $this->_headCell("Fully Loaded", "border", 3 + $this->_countRightEnabledColumns());
@@ -146,7 +154,7 @@ class RunResultHtmlTable {
       $out .= $this->_headCell("Start<br>Render");
     }
     if ($this->isColumnEnabled(self::COL_FIRST_CONTENTFUL_PAINT)) {
-      $out .= $this->_headCell('<a href="https://web.dev/fcp/">First<br>Contentful<br>Paint</a>', $vitalsBorder);
+      $out .= $this->_headCell('First<br>Contentful<br>Paint');
     }
     if ($this->isColumnEnabled(self::COL_SPEED_INDEX)) {
       $out .= $this->_headCell('<a href="' . self::SPEED_INDEX_URL . '" target="_blank">Speed<br>Index</a>');
@@ -156,15 +164,15 @@ class RunResultHtmlTable {
     }
     $vitalsBorder = "border";
     if ($this->isColumnEnabled(self::COL_LARGEST_CONTENTFUL_PAINT)) {
-      $out .= $this->_headCell('<a href="https://web.dev/lcp/">Largest<br>Contentful<br>Paint</a>', $vitalsBorder);
+      $out .= $this->_headCell("<a href='$vitals_url#lcp'>Largest<br>Contentful<br>Paint</a>", $vitalsBorder);
       $vitalsBorder = null;
     }
     if ($this->isColumnEnabled(self::COL_CUMULATIVE_LAYOUT_SHIFT)) {
-      $out .= $this->_headCell('<a href="https://web.dev/cls/">Cumulative<br>Layout<br>Shift</a>', $vitalsBorder);
+      $out .= $this->_headCell("<a href='$vitals_url#cls'>Cumulative<br>Layout<br>Shift</a>", $vitalsBorder);
       $vitalsBorder = null;
     }
     if ($this->isColumnEnabled(self::COL_TOTAL_BLOCKING_TIME)) {
-      $out .= $this->_headCell('<a href="https://web.dev/tbt/">Total<br>Blocking<br>Time</a>', $vitalsBorder);
+      $out .= $this->_headCell("<a href='$vitals_url#tbt'>Total<br>Blocking<br>Time</a>", $vitalsBorder);
       $vitalsBorder = null;
     }
 
@@ -401,8 +409,9 @@ class RunResultHtmlTable {
     for ($i = 1; $i <= 5; $i++)
       $dollars .= $i <= $count ? '$' : '-';
     $id = $this->testInfo->getId();
+    $onclick = "try{if(_gaq!=undefined){_gaq.push(['_trackEvent','Outbound','Click','WhatDoesMySiteCost']);}}catch(err){}";
     $text = "<a title=\"Find out how much it costs for someone to use your site on mobile networks around the world.\" " .
-      "href=\"http://whatdoesmysitecost.com/test/$id\">$dollars</a>";
+      "href=\"http://whatdoesmysitecost.com/test/$id\" onclick=\"$onclick\">$dollars</a>";
     return $text;
   }
 }

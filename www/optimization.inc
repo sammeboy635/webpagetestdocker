@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 require_once __DIR__ . '/include/TestPaths.php';
 
 /**
@@ -504,16 +507,14 @@ function ReportCookies(&$pageData, &$requests, $step)
 
 /**
 * Display a glossary for the optimization results
-*
-* @param mixed $settings
 */
-function dumpOptimizationGlossary(&$settings)
+function dumpOptimizationGlossary()
 {
 ?>
     <hr>
     <h2>Glossary:</h2>
     <p></p>
-    <table border="1" cellpadding="5px" cellspacing="0" style="width:100%">
+    <table class="glossary" cellpadding="5px" cellspacing="0" style="width:100%">
 
         <tr><th class="nowrap" rowspan=2 colspan=1>First Byte Time</th>
             <td class="nowrap">Applicable Objects</td>

@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include __DIR__ . '/common.inc';
 require_once __DIR__ . '/breakdown.inc';
 require_once __DIR__ . '/contentColors.inc';
@@ -22,11 +25,31 @@ if(!$testInfo->isFirstViewOnly()) {
 }
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest Content Breakdown<?php echo $testLabel; ?></title>
         <?php $gaTemplate = 'Content Breakdown'; include ('head.inc'); ?>
         <style type="text/css">
+            div.tableRequests table {
+              max-width: 300px;
+              vertical-align:top;
+            }
+
+            div.tableBytes table {
+              max-width: 300px;
+              vertical-align:top;
+            }
+
+            div.tableRequests td {
+                max-width: 250px;
+                text-align: left;
+            }
+
+            div.tableBytes td {
+                max-width: 250px;
+                text-align: left;
+            }
+
             td {
                 text-align:center;
                 vertical-align:middle;
@@ -34,7 +57,7 @@ if(!$testInfo->isFirstViewOnly()) {
             }
 
             div.bar {
-                height:12px;
+                height:20px;
                 margin-top:auto;
                 margin-bottom:auto;
             }
@@ -64,11 +87,10 @@ if(!$testInfo->isFirstViewOnly()) {
             ?>
         </style>
     </head>
-    <body>
-        <div class="page">
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
             <?php
             $tab = 'Test Result';
-            $subtab = 'Content Breakdown';
+            $subtab = 'Content';
             include 'header.inc';
             ?>
             <?php
@@ -117,10 +139,8 @@ if(!$testInfo->isFirstViewOnly()) {
                     }
                 ?>
             <?php } ?>
-        </div>
-
+                </div>
         <?php include('footer.inc'); ?>
-        <a href="#top" id="back_to_top">Back to top</a>
 
         <!--Load the AJAX API-->
         <script type="text/javascript" src="//www.google.com/jsapi"></script>

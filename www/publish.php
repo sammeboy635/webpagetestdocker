@@ -1,8 +1,11 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 ob_start();
 set_time_limit(300);
 include 'common.inc';
-$pub = $settings['publishTo'];
+$pub = GetSetting('publishTo', null);
 if (!isset($pub) || !strlen($pub)) {
     $pub = $_SERVER['HTTP_HOST'];
 }
@@ -22,12 +25,12 @@ $page_keywords = array('Publish','WebPageTest','Website Speed Test','Page Speed'
 $page_description = "Publish test results to WebPageTest.";
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest - Publish</title>
         <?php $gaTemplate = 'Publish'; include ('head.inc'); ?>
     </head>
-    <body>
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
         <div class="page">
             <?php
             include 'header.inc';

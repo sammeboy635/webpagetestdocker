@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 require_once __DIR__ . '/../common_lib.inc';
 require_once __DIR__ . '/../object_detail.inc';
@@ -16,13 +19,6 @@ class HttpArchiveGenerator
     private $options;
 
     private $harData = array();
-
-    private static $includePageArrays = array('priorityStreams' => true,
-                                              'blinkFeatureFirstUsed' => true,
-                                              'detected' => true,
-                                              'detected_apps' => true,
-                                              'v8Stats' => true,
-                                              'LayoutShifts' => true);
 
     /**
      * HttpArchiveGenerator constructor.
@@ -124,15 +120,16 @@ class HttpArchiveGenerator
         $runResult = $this->resultData->getRunResult($runNumber, $cached);
         for ($stepNumber = 1; $stepNumber <= $runResult->countSteps(); $stepNumber++) {
 
-            $stepResult = $runResult->getStepResult($stepNumber)->getRawResults();
+            $stepResult = $runResult->getStepResult($stepNumber);
+            $rawResult = $stepResult->getRawResults();
 
-            $pd = $this->setPageDataFor($stepResult);
-            $this->setEntryDataFor($stepResult, $pd, $entries);
+            $pd = $this->setPageDataFor($rawResult, $stepResult);
+            $this->setEntryDataFor($rawResult, $pd, $entries);
 
         }
     }
 
-    private function setPageDataFor($stepData) {
+    private function setPageDataFor($stepData, $testStepResult) {
         $run = $stepData['run'];
         $cached = $stepData['cached'];
         $stepNumber = $stepData['step'];
@@ -146,14 +143,19 @@ class HttpArchiveGenerator
             $pd['title'] .= "First View";
         $pd['title'] .= " for " . $stepData['URL'];
         $pd['id'] = "page_{$run}_{$cached}_{$stepNumber}";
+        $pd['testID'] = $this->testInfo->getId();
         $pd['pageTimings'] = array('onLoad' => $stepData['docTime'], 'onContentLoad' => -1, '_startRender' => $stepData['render']);
 
         // dump all of our metrics into the HAR data as custom fields
         foreach ($stepData as $name => $value) {
-            if (!is_array($value) || isset(HttpArchiveGenerator::$includePageArrays[$name]))
-                $pd["_$name"] = $value;
+            $pd["_$name"] = $value;
         }
 
+        $console_log = $testStepResult->getConsoleLog();
+        if (isset($console_log)) {
+          $pd['_consoleLog'] = $console_log;
+        }
+  
         // add the page-level ldata to the result
         $this->harData['log']['pages'][] = $pd;
         return $pd;
@@ -248,20 +250,26 @@ class HttpArchiveGenerator
                         }
                     }
                 } else {
-                    if (!$ver) { // if version not already set then try to parse it
+                    if (!$ver) { // if version not already set then try to parse it from headers
                         $pos = strpos($header, 'HTTP/');
-                        if ($pos !== false)
+                        if ($pos !== false) {
                             $ver = (string)trim(substr($header, $pos, 8));
+                            // Only accept HTTP/0.9 and HTTP/1 values for versions from headers
+                            // HTTP/2 and above is not set in headers and will come from protocol
+                            if ($ver !== 'HTTP/0.9' && $ver !== 'HTTP/1.0' && $ver !== 'HTTP/1.1')
+                                $ver = '';
+                        }
                     }
                 }
             }
         }
         if ($headersSize)
             $request['headersSize'] = $headersSize;
-        if (strlen($ver)) {
-            $request['httpVersion'] = $ver;
-        } elseif(isset($requestData['protocol']) && strlen($requestData['protocol'])) {
+        // Get HTTP version from protocol and only fall back to parsed header version if not set
+        if(isset($requestData['protocol']) && strlen($requestData['protocol'])) {
             $request['httpVersion'] = $requestData['protocol'];
+        } elseif (strlen($ver)) {
+            $request['httpVersion'] = $ver;
         } else {
             $request['httpVersion'] = '';
         }
@@ -316,20 +324,26 @@ class HttpArchiveGenerator
                     if (!strcasecmp($name, 'location'))
                         $loc = (string)$val;
                 } else {
-                    if (!$ver) { // if version not already set then try to parse it
+                    if (!$ver) { // if version not already set then try to parse it from headers
                         $pos = strpos($header, 'HTTP/');
-                        if ($pos !== false)
+                        if ($pos !== false) {
                             $ver = (string)trim(substr($header, $pos, 8));
+                            // Only accept HTTP/0.9 and HTTP/1 values for versions from headers
+                            // HTTP/2 and above is not set in headers and will come from protocol
+                            if ($ver !== 'HTTP/0.9' && $ver !== 'HTTP/1.0' && $ver !== 'HTTP/1.1')
+                                $ver = '';
+                        }
                     }
                 }
             }
         }
         if ($headersSize)
             $response['headersSize'] = $headersSize;
-        if (strlen($ver)) {
-            $response['httpVersion'] = $ver;
-        } elseif(isset($requestData['protocol']) && strlen($requestData['protocol'])) {
+        // Get HTTP version from protocol and only fall back to parsed header version if not set
+        if(isset($requestData['protocol']) && strlen($requestData['protocol'])) {
             $response['httpVersion'] = $requestData['protocol'];
+        } elseif (strlen($ver)) {
+            $response['httpVersion'] = $ver;
         } else {
             $response['httpVersion'] = '';
         }

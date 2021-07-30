@@ -1,10 +1,13 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 $page_keywords = array('Optimization','WebPageTest','Website Speed Test','Tips');
 $page_description = "Website performance optimization tips.";
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest - Tips</title>
         <meta http-equiv="charset" content="iso-8859-1">
@@ -13,7 +16,7 @@ $page_description = "Website performance optimization tips.";
         <meta name="author" content="Patrick Meenan">
         <?php $gaTemplate = 'Tips'; include ('head.inc'); ?>
     </head>
-    <body>
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
         <div class="page">
             <?php
             $tab = 'Tips';

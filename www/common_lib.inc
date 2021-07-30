@@ -1,10 +1,12 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 require_once(__DIR__ . '/archive.inc');
 require_once(__DIR__ . '/util.inc');
 
 if(extension_loaded('newrelic')) {
   newrelic_add_custom_tracer('RestoreTest');
-  newrelic_add_custom_tracer('SBL_Check');
 }
 
 define('VIDEO_CODE_VERSION', 20);
@@ -75,26 +77,8 @@ function GetLocationKey($location) {
 */
 function GetLocationInfo($location) {
   $info = null;
-  $from_cache = false;
   if (isset($location) && strlen($location)) {
-    $has_apcu = false;
-    $has_apc = false;
-    if (function_exists('apcu_fetch') && function_exists('apcu_store')) {
-      $has_apcu = true;
-      $info = apcu_fetch("locinfo_$location");
-      if ($info === false)
-        $info = null;
-      if (isset($info))
-        $from_cache = true;
-    } elseif (function_exists('apc_fetch') && function_exists('apc_store')) {
-      $has_apc = true;
-      $info = apc_fetch("locinfo_$location");
-      if ($info === false)
-        $info = null;
-      if (isset($info))
-        $from_cache = true;
-    }
-
+    $info = CacheFetch("locinfo_$location");
     if (!isset($info)) {
       $info = array();
       $locations = LoadLocationsIni();
@@ -105,13 +89,7 @@ function GetLocationInfo($location) {
           $info['key'] = $default_key ? $default_key : '';
         }
       }
-    }
-
-    if (isset($info) && !$from_cache) {
-      if ($has_apcu)
-        apcu_store("locinfo_$location", $info, 120);
-      elseif ($has_apc)
-        apc_store("locinfo_$location", $info, 120);
+      CacheStore("locinfo_$location", $info, 120);
     }
   }
   return $info;
@@ -120,55 +98,33 @@ function GetLocationInfo($location) {
 function GetLocationFallbacks($location) {
   $fallback = null;
   if (isset($location) && strlen($location)) {
-    if (function_exists('apcu_fetch') &&
-        function_exists('apcu_store')) {
-      $fallback = apcu_fetch("fallback_$location");
-      if ($fallback === false) {
-        $fallback = '';
-        $locations = LoadLocationsIni();
-        if ($locations !== false &&
-            is_array($locations) &&
-            isset($locations[$location]) &&
-            isset($locations[$location]['fallback'])) {
-          $fallback = $locations[$location]['fallback'];
-        }
-        apcu_store("fallback_$location", $fallback, 60);
-      }
-    } elseif (function_exists('apc_fetch') &&
-              function_exists('apc_store')) {
-      $fallback = apc_fetch("fallback_$location");
-      if ($fallback === false) {
-        $fallback = '';
-        $locations = LoadLocationsIni();
-        if ($locations !== false &&
-            is_array($locations) &&
-            isset($locations[$location]) &&
-            isset($locations[$location]['fallback'])) {
-          $fallback = $locations[$location]['fallback'];
-        }
-        apc_store("fallback_$location", $fallback, 60);
-      }
-    } else {
+    $fallback = CacheFetch("fallback_$location");
+    if (!isset($fallback)) {
+      $fallback = '';
       $locations = LoadLocationsIni();
-      if ($locations !== false &&
-          is_array($locations) &&
-          isset($locations[$location]) &&
-          isset($locations[$location]['fallback'])) {
+      if ($locations !== false && is_array($locations) && isset($locations[$location]['fallback'])) {
         $fallback = $locations[$location]['fallback'];
       }
+      CacheStore("fallback_$location", $fallback, 60);
     }
   }
 
   $fallbacks = array();
   if (isset($fallback) && strlen($fallback))
     $fallbacks = explode(',', $fallback);
-  return $fallbacks;
+
+    return $fallbacks;
 }
 
 // Load the locations from locations.ini and merge-in the ec2 locations if necessary
 function LoadLocationsIni() {
   $ec2_allow = GetSetting('ec2_allow');
-  $locations = parse_ini_file(__DIR__ . '/settings/locations.ini', true);
+  $locations_file = __DIR__ . '/settings/locations.ini';
+  if (file_exists(__DIR__ . '/settings/common/locations.ini'))
+    $locations_file = __DIR__ . '/settings/common/locations.ini';
+  if (file_exists(__DIR__ . '/settings/server/locations.ini'))
+    $locations_file = __DIR__ . '/settings/server/locations.ini';
+  $locations = parse_ini_file($locations_file, true);
   if (GetSetting('ec2_locations')) {
     $ec2 = parse_ini_file(__DIR__ . '/settings/ec2_locations.ini', true);
     if ($ec2 && is_array($ec2) && isset($ec2['locations'])) {
@@ -187,8 +143,6 @@ function LoadLocationsIni() {
         foreach($ec2 as $name => $group) {
           if ($name !== 'locations') {
             $locations[$name] = $group;
-            if ($ec2_allow)
-              $locations[$name]['allowKeys'] = $ec2_allow;
           }
         }
       } else {
@@ -225,40 +179,68 @@ function LoadLocationsIni() {
 /**
 * Get a setting from settings.ini (and cache it for up to a minute)
 */
+$SETTINGS = null;
 function GetSetting($setting, $default = FALSE) {
-  global $settings;
+  global $SETTINGS;
   $ret = $default;
-  if (function_exists('apcu_fetch') &&
-      function_exists('apcu_store')) {
-    $value = apcu_fetch("setting_$setting", $success);
-    if ($success)
-      $ret = $value;
-    else {
-      if (!isset($settings) || !is_array($settings))
-        $settings = parse_ini_file(__DIR__ . '/settings/settings.ini');
-      if (isset($settings) && is_array($settings) && array_key_exists($setting, $settings))
-        $ret = $settings[$setting];
-      apcu_store("setting_$setting", $ret, 60);
+
+  // Pull the settings from apc cache if possible if they are not in the memory cache
+  if (!isset($SETTINGS)) {
+    $SETTINGS = CacheFetch('settings');
+    if (!isset($SETTINGS)) {
+      $SETTINGS = array();
+      // Load the global settings
+      if (file_exists(__DIR__ . '/settings/settings.ini')) {
+        $SETTINGS = parse_ini_file(__DIR__ . '/settings/settings.ini');
+      }
+      // Load common settings as overrides
+      if (file_exists(__DIR__ . '/settings/common/settings.ini')) {
+        $common = parse_ini_file(__DIR__ . '/settings/common/settings.ini');
+        $SETTINGS = array_merge($SETTINGS, $common);
+      }
+      // Load server-specific settings as overrides
+      if (file_exists(__DIR__ . '/settings/server/settings.ini')) {
+        $server = parse_ini_file(__DIR__ . '/settings/server/settings.ini');
+        $SETTINGS = array_merge($SETTINGS, $server);
+      }
+      CacheStore('settings', $SETTINGS, 60);
     }
-  } elseif (function_exists('apc_fetch') &&
-            function_exists('apc_store')) {
-    $value = apc_fetch("setting_$setting", $success);
-    if ($success)
-      $ret = $value;
-    else {
-      if (!isset($settings) || !is_array($settings))
-        $settings = parse_ini_file(__DIR__ . '/settings/settings.ini');
-      if (isset($settings) && is_array($settings) && array_key_exists($setting, $settings))
-        $ret = $settings[$setting];
-      apc_store("setting_$setting", $ret, 60);
-    }
-  } else {
-    if (!isset($settings) || !is_array($settings))
-      $settings = parse_ini_file(__DIR__ . '/settings/settings.ini');
-    if (isset($settings) && is_array($settings) && array_key_exists($setting, $settings))
-      $ret = $settings[$setting];
+  }
+
+  if (isset($SETTINGS) && is_array($SETTINGS) && isset($SETTINGS[$setting])) {
+    $ret = $SETTINGS[$setting];
   }
   return $ret;
+}
+
+function CacheFetch($key) {
+  $ret = null;
+  // namespace the keys by installation
+  $key = sha1(__DIR__) . $key;
+  if (function_exists('apcu_fetch')) {
+    $ret = apcu_fetch($key, $success);
+    if (!$success) {
+      $ret = null;
+    }
+  } elseif (function_exists('apc_fetch')) {
+    $ret = apc_fetch($key, $success);
+    if (!$success) {
+      $ret = null;
+    }
+  }
+  return $ret;
+}
+
+function CacheStore($key, $value, $ttl=0) {
+  // namespace the keys by installation
+  $key = sha1(__DIR__) . $key;
+  if (isset($value)) {
+    if (function_exists('apcu_store')) {
+      apcu_store($key, $value, $ttl);
+    } elseif (function_exists('apc_store')) {
+      apc_store($key, $value, $ttl);
+    }
+  }
 }
 
 /**
@@ -629,62 +611,6 @@ function gz_is_file($filename)
 }
 
 /**
-* Load the pagespeed results and calculate the score
-*
-* @param mixed $file
-*/
-function GetPageSpeedScore($file, $data = null)
-{
-  $score = '';
-  if (isset($data))
-    $pagespeed = $data;
-  elseif (gz_is_file($file))
-    $pagespeed = LoadPageSpeedData($file);
-
-  if ($pagespeed) {
-    if (isset($pagespeed['score'])) {
-      $score = $pagespeed['score'];
-    } else {
-      $total = 0;
-      $count = 0;
-      foreach ($pagespeed as &$check) {
-        $total += (double)$check['score'];
-        $count++;
-      }
-      if( $count )
-        $score = ceil($total / $count);
-    }
-  }
-
-  return $score;
-}
-
-/**
-* Load the full Page Speed data from disk
-*
-* @param mixed $file
-*/
-function LoadPageSpeedData($file) {
-  $pagespeed = false;
-
-  if (gz_is_file($file)) {
-    $pagespeed = json_decode(gz_file_get_contents($file), true);
-
-    if (!$pagespeed) {
-      // try an alternate JSON decoder
-      require_once('./lib/json.php');
-      $json = new Services_JSON(SERVICES_JSON_LOOSE_TYPE | SERVICES_JSON_SUPPRESS_ERRORS);
-      $pagespeed = $json->decode(gz_file_get_contents($file), true);
-      if ($pagespeed) {
-        // make sure we only have to go this route once, save the corrected file
-        gz_file_put_contents($file, json_encode($pagespeed));
-      }
-    }
-  }
-  return $pagespeed;
-}
-
-/**
 * Count the number of test files in the given directory
 *
 * @param mixed $dir
@@ -696,6 +622,17 @@ function CountTests($path)
     $count = count($files);
 
     return $count;
+}
+
+$MOBILE_DEVICES = null;
+function LoadMobileDevices() {
+  if (isset($MOBILE_DEVICES)) {
+    return $MOBILE_DEVICES;
+  }
+  if (is_file(__DIR__ . '/settings/mobile_devices.ini')) {
+    $MOBILE_DEVICES = parse_ini_file(__DIR__ . '/settings/mobile_devices.ini', true);
+    return $MOBILE_DEVICES;
+  }
 }
 
 /**
@@ -766,6 +703,16 @@ function BuildLocations( &$locations )
                                             $cfg = $configuration;
                                             $cfg['browser'] = $browser;
                                             $cfg['label'] = $cfg['label'] . " - $browser";
+                                            // Allocate the browser to a group
+                                            $cfg['browser_group'] = 'Desktop';
+                                            if (isset($configuration['mobile']) && $configuration['mobile']) {
+                                              $cfg['browser_group'] = 'Mobile';
+                                            } elseif (substr($browser, 0, 6) == 'iPhone' || substr($browser, 0, 4) == 'iPod') {
+                                              $cfg['browser_group'] = 'Mobile';
+                                            } elseif (substr($browser, 0, 4) == 'iPad') {
+                                              $cfg['browser_group'] = 'Tablet';
+                                            }
+                            
                                             $locations[$label] = $cfg;
                                         }
                                     } else {
@@ -851,11 +798,11 @@ function FilterLocations(&$locations, $includeHidden = '',
               $locations[$name]['status'] = $testers['status'];
             // now check the times
             if (isset($testers) && is_array($testers) && isset($testers['elapsed'])) {
-              if (!isset($_REQUEST['hidden']) && $testers['elapsed'] > 30)
+              if (!isset($_REQUEST['hidden']) && $testers['elapsed'] > 30 && !isset($locRef['scheduler_node']))
                 unset($locations[$name]);
             } else {
               // TODO: Fix this so it only hides local locations, not relay and API
-              if (!isset($_REQUEST['hidden']) && !array_key_exists('relayServer', $locRef))
+              if (!isset($_REQUEST['hidden']) && !array_key_exists('relayServer', $locRef) && !isset($locRef['scheduler_node']))
                 unset($locations[$name]);
             }
         }
@@ -1038,6 +985,15 @@ function ParseLocations(&$locations) {
                 $b = array();
                 $b['label'] = $browser;
                 $b['key'] = $browserKey;
+                $b['id'] = $browser;
+                $b['group'] = 'Desktop';
+                if (isset($locations[$config]['mobile']) && $locations[$config]['mobile']) {
+                  $b['group'] = 'Mobile';
+                } elseif (substr($browser, 0, 6) == 'iPhone' || substr($browser, 0, 4) == 'iPod') {
+                  $b['group'] = 'Mobile';
+                } elseif (substr($browser, 0, 4) == 'iPad') {
+                  $b['group'] = 'Tablet';
+                }
                 $loc['browsers'][$browserKey] = $b;
             }
         }
@@ -1256,21 +1212,30 @@ function RestoreTest($id)
   $ret = false;
   if (!$DISABLE_RESTORE && !$userIsBot && ValidateTestId($id)) {
     $testPath = './' . GetTestPath($id);
-    // Only trigger a restore if the test info is not valid
-    $testInfo = GetTestInfo($id);
-    if (!$testInfo) {
+
+    // Get the capture server settings if configured and the test ID specifies a capture server
+    $capture_server = null;
+    $capture_salt = null;
+    if (preg_match('/^\d+[^_+][_ix]([^c_])+c/', $id, $matches)) {
+        $capture_prefix = $matches[1];
+        if ($capture_prefix) {
+            $capture_server = GetSetting("cp_capture_$capture_prefix");
+            $capture_salt = GetSetting("cp_capture_salt_$capture_prefix");
+        }
+    }
+
+    // Only trigger a restore if the test doesn't exist
+    if (!is_file("$testPath/testinfo.ini")) {
       $archive_dir = GetSetting('archive_dir');
       $archive_url = GetSetting('archive_url');
       $archive_s3_url = GetSetting('archive_s3_url');
       $archive_s3_server = GetSetting('archive_s3_server');
-      if (($archive_dir && strlen($archive_dir)) ||
+      if (($capture_server && $capture_salt) ||
+          ($archive_dir && strlen($archive_dir)) ||
           ($archive_url && strlen($archive_url)) ||
           ($archive_s3_url && strlen($archive_s3_url)) ||
           ($archive_s3_server && strlen($archive_s3_server))) {
         $ret = RestoreArchive($id);
-        // Try a second time in case of a transient error
-        if (!$ret)
-          $ret = RestoreArchive($id);
       } else {
         $ret = true;
       }
@@ -1288,13 +1253,16 @@ function RestoreTest($id)
 function TestLastAccessed($id)
 {
     $elapsed = null;
-    $file = './' . GetTestPath($id) . '/testinfo.ini';
-    if (is_file($file)) {
-      $timestamp = filemtime($file);
-      if( $timestamp )
-      {
+    $testPath = './' . GetTestPath($id);
+    $files = array('.archived', 'testinfo.ini');
+    foreach ($files as $file) {
+      if (is_file("$testPath/$file")) {
+        $timestamp = filemtime("$testPath/$file");
+        if ($timestamp) {
           $elapsed = max(time() - $timestamp, 0);
           $elapsed /= 86400;
+          break;
+        }
       }
     }
     return $elapsed;
@@ -1391,7 +1359,9 @@ function GetPendingTests($loc, &$count)
 *
 * @param mixed $location
 */
+$SCHEDULER_QUEUES = null;
 function GetQueueLengths($location) {
+  global $SCHEDULER_QUEUES;
   $queues = array();
   for ($priority = 0; $priority <= 9; $priority++)
     $queues[$priority] = 0;
@@ -1410,6 +1380,37 @@ function GetQueueLengths($location) {
         $stats = $pheanstalk->statsTube($tube);
         $queues[0] += intval($stats['current-jobs-ready']);
       } catch(Exception $e) {
+      }
+    }
+  } elseif (isset($info) && is_array($info) && isset($info['scheduler_node'])) {
+    // Get the scheduler queue length (not separated by priorities)
+    if (!isset($SCHEDULER_QUEUES)) {
+      $SCHEDULER_QUEUES = CacheFetch('scheduler-queues', null);
+      if (!isset($SCHEDULER_QUEUES)) {
+        $host = GetSetting('host');
+        $scheduler = GetSetting('cp_scheduler');
+        $scheduler_salt = GetSetting('cp_scheduler_salt');
+        if ($scheduler && $scheduler_salt) {
+          $url = "{$scheduler}hawkscheduleserver/wpt-metadata.ashx?queue=1&priorityqueue=1";
+          $cpid = GetCPID($host, $scheduler_salt);
+          $result_text = cp_http_get($url, $cpid);
+          if (isset($result_text) && strlen($result_text)) {
+            $SCHEDULER_QUEUES = json_decode($result_text, true);
+            CacheStore('scheduler-queues', $SCHEDULER_QUEUES, 15);
+          }
+        }
+      }
+    }
+    if (isset($SCHEDULER_QUEUES) && is_array($SCHEDULER_QUEUES)) {
+      if (isset($SCHEDULER_QUEUES['PriorityQueues'][$info['scheduler_node']])) {
+        $sq = $SCHEDULER_QUEUES['PriorityQueues'][$info['scheduler_node']];
+        for ($priority = 0; $priority <= 9; $priority++) {
+          if (isset($sq[$priority])) {
+            $queues[$priority] = intval($sq[$priority]);
+          }
+        }
+      } elseif (isset($SCHEDULER_QUEUES['Queues'][$info['scheduler_node']])) {
+        $queues[0] = intval($SCHEDULER_QUEUES['Queues'][$info['scheduler_node']]);
       }
     }
   } else {
@@ -1483,17 +1484,44 @@ function GetDailyTestNum() {
 
 function AddTestJob($location, $job, $test, $testId) {
   $ret = false;
-  $waiting_file = null;
   if (isset($job) && strlen($job) && ValidateTestId($testId)) {
     $testPath = GetTestPath($testId);
     if (strlen($testPath)) {
       $testPath = './' . $testPath;
       if (!is_dir($testPath))
         mkdir($testPath, 0777, true);
-      $waiting_file = "$testPath/test.waiting";
-      touch($waiting_file);
+      touch("$testPath/test.waiting");
       $info = GetLocationInfo($location);
-      if (isset($info) && is_array($info) && isset($info['queue'])) {
+      $scheduler = GetSetting('cp_scheduler');
+      $scheduler_salt = GetSetting('cp_scheduler_salt');
+      $host = GetSetting('host');
+      if ($scheduler && $scheduler_salt && isset($info) && is_array($info) && isset($info['scheduler_node'])) {
+        touch("$testPath/test.scheduled");
+        $json = null;
+        $ret = true;
+        $json = json_decode($job, true);
+        $priority = intval(GetSetting('user_priority', 0));
+        if (isset($json['priority'])) {
+          $priority = $json['priority'];
+        }
+        for ($run = 1; $run <= $test['runs']; $run++) {
+          $jobID = $testId;
+          if($run > 1) {
+            $jobID .= '.' . $run;
+          }
+          // Submit multiple job files for a multi-run test so they can run in parallel
+          if (isset($json)) {
+            if ($test['runs'] > 1) {
+              $json['run'] = $run;
+            }
+            $json['jobID'] = $jobID;
+            $job = json_encode($json);
+          }
+          if (!AddSchedulerJob($jobID, $job, $scheduler, $scheduler_salt, $info['scheduler_node'], $host, $priority)) {
+            $ret = false;
+          }
+        }
+    } elseif (isset($info) && is_array($info) && isset($info['queue'])) {
         // explicitly configured work queues do not support multiple priorities for status
         // though they do for the actual jobs.
         $queueType = $info['queue'];
@@ -1515,24 +1543,37 @@ function AddTestJob($location, $job, $test, $testId) {
       } else {
         $locationLock = LockLocation($location);
         if (isset($locationLock)) {
+          $ret = true;
           if( !is_dir($test['workdir']) )
             mkdir($test['workdir'], 0777, true);
           $workDir = $test['workdir'];
-          if (isset($test['affinity']))
-            $test['job'] = "Affinity{$test['affinity']}.{$test['job']}";
-          $testNum = GetDailyTestNum();
-          $sortableIndex = date('ymd') . GetSortableString($testNum);
-          $test['job'] = "$sortableIndex.{$test['job']}";
-          $fileName = $test['job'];
-          $file = "$workDir/$fileName";
-          if( file_put_contents($file, $job) ) {
-            if (AddJobFile($location, $workDir, $fileName, $test['priority'], $test['queue_limit'])) {
-              // store a copy of the job file with the original test in case the test fails and we need to resubmit it
-              $test['job_file'] = realpath($file);
-              file_put_contents("$testPath/test.job", $job);
-              $ret = true;
+          $json = null;
+          if ($test['runs'] > 1 && substr($job, 0, 1) == '{') {
+            $json = json_decode($job, true);
+          }
+          for ($run = 1; $run <= $test['runs']; $run++) {
+            // Submit multiple job files for a multi-run test so they can run in parallel
+            if (isset($json)) {
+              $json['run'] = $run;
+              $job = json_encode($json);
+            }
+            $fileName = $test['job'];
+            if (isset($test['affinity']))
+              $fileName = "Affinity{$test['affinity']}.{$test['job']}";
+            $testNum = GetDailyTestNum();
+            $sortableIndex = date('ymd') . GetSortableString($testNum);
+            $fileName = "$sortableIndex.$fileName";
+            $file = "$workDir/$fileName";
+            if( file_put_contents($file, $job) ) {
+              if (!AddJobFile($location, $workDir, $fileName, $test['priority'], $test['queue_limit'])) {
+                $ret = false;
+                unlink($file);
+              }
             } else {
-              unlink($file);
+              $ret = false;
+            }
+            if (!isset($json)) {
+              break;
             }
           }
           Unlock($locationLock);
@@ -1540,9 +1581,229 @@ function AddTestJob($location, $job, $test, $testId) {
       }
     }
   }
-  if (!$ret && isset($waiting_file) && is_file($waiting_file))
-    unlink($waiting_file);
   return $ret;
+}
+
+/**
+ * Get a CPID signature string
+ */
+function GetCPID($host, $salt) {
+  $host = str_replace('.', '', trim($host));
+  $hash_src = strtoupper($host) . ';' . date('Ym') . $salt;
+  $hash_string = base64_encode(sha1($hash_src, true));
+  $cpid_header = 'm;' . $host . ';' . $hash_string;
+  return $cpid_header;
+}
+
+function cp_http_post($url, $body, $cpid, $file=null) {
+  $result = null;
+  $filesize = 0;
+  if (function_exists('curl_init')) {
+    $ch = curl_init($url);
+    $headers = array();
+    $file_stream = null;
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $contentType = "application/json";
+    if (isset($file)) {
+      $contentType = "application/zip";
+      $file_stream = fopen($file, 'rb');
+      if ($file_stream) {
+        curl_setopt($ch, CURLOPT_PUT, 1 );
+        curl_setopt($ch, CURLOPT_UPLOAD, true);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST' );
+        curl_setopt($ch, CURLOPT_INFILE, $file_stream);
+        $filesize = filesize($file);
+        curl_setopt($ch, CURLOPT_INFILESIZE, $filesize);
+      } else {
+        curl_close($ch);
+        return null;
+      }
+    } else {
+      curl_setopt($ch, CURLOPT_POST, 1 );
+      curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+    }
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array("Content-Type: $contentType",
+                                               "CPID: $cpid",
+                                               "Transfer-Encoding: chunked"));
+    curl_setopt($ch, CURLOPT_FAILONERROR, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_DNS_CACHE_TIMEOUT, 600);
+    curl_setopt($ch, CURLOPT_MAXREDIRS, 10);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 600);
+    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($curl, $header) use (&$headers) {
+      $len = strlen($header);
+      $header = explode(':', $header, 2);
+      if (count($header) < 2) // ignore invalid headers
+        return $len;
+      $headers[strtolower(trim($header[0]))] = trim($header[1]);
+      return $len;
+    });
+    $response = curl_exec($ch);
+    if($response !== false) {
+      if (isset($headers['wpt_status_code']) && ($headers['wpt_status_code'] == '0' || $headers['wpt_status_code'] == '22')) {
+        $result = $response;
+      } else {
+        $error_log = GetSetting('error_log');
+        if ($error_log) {
+          if (isset($headers['wpt_status_code'])) {
+            error_log(gmdate('Y/m/d H:i:s - ') . "POST ($filesize) $url : wpt_status_code {$headers['wpt_status_code']}\n", 3, $error_log);
+          } else {
+            error_log(gmdate('Y/m/d H:i:s - ') . "POST ($filesize) $url : wpt_status_code missing\n", 3, $error_log);
+          }
+        }
+      }
+    } else {
+      $error = curl_error($ch);
+      $error_log = GetSetting('error_log');
+      if ($error_log) {
+        if ($error ) {
+          error_log(gmdate('Y/m/d H:i:s - ') . "POST ($filesize) $url : $error\n", 3, $error_log);
+        } else {
+          $code = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+          if ($code) {
+            error_log(gmdate('Y/m/d H:i:s - ') . "POST ($filesize) $url : code $code\n", 3, $error_log);
+          } else {
+            error_log(gmdate('Y/m/d H:i:s - ') . "POST ($filesize) $url unknown error\n", 3, $error_log);
+          }
+        }
+      }
+    }
+    if ($file_stream) {
+      fclose($file_stream);
+    }
+    curl_close($ch);
+  }
+  return $result;
+}
+
+function cp_http_get($url, $cpid) {
+  $result = null;
+  if (function_exists('curl_init')) {
+    $ch = curl_init($url);
+    $headers = array();
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array("CPID: $cpid"));
+    curl_setopt($ch, CURLOPT_FAILONERROR, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_DNS_CACHE_TIMEOUT, 600);
+    curl_setopt($ch, CURLOPT_MAXREDIRS, 10);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 600);
+    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($curl, $header) use (&$headers) {
+      $len = strlen($header);
+      $header = explode(':', $header, 2);
+      if (count($header) < 2) // ignore invalid headers
+        return $len;
+      $headers[strtolower(trim($header[0]))] = trim($header[1]);
+      return $len;
+    });
+    $response = curl_exec($ch);
+    curl_close($ch);
+    if($response !== false) {
+      if (isset($headers['wpt_status_code']) && $headers['wpt_status_code'] == '0') {
+        $result = $response;
+      }
+    }
+  }
+  return $result;
+}
+
+function cp_http_get_file($url, $cpid, $file) {
+  $ret = false;
+  if (function_exists('curl_init')) {
+    $file_stream = fopen($file, 'wb');
+    if ($file_stream) {
+      $ch = curl_init($url);
+      $headers = array();
+      curl_setopt($ch, CURLOPT_FILE, $file_stream);
+      curl_setopt($ch, CURLOPT_HTTPHEADER, array("CPID: $cpid"));
+      curl_setopt($ch, CURLOPT_FAILONERROR, true);
+      curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+      curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
+      curl_setopt($ch, CURLOPT_DNS_CACHE_TIMEOUT, 600);
+      curl_setopt($ch, CURLOPT_MAXREDIRS, 10);
+      curl_setopt($ch, CURLOPT_TIMEOUT, 600);
+      curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($curl, $header) use (&$headers) {
+        $len = strlen($header);
+        $header = explode(':', $header, 2);
+        if (count($header) < 2) // ignore invalid headers
+          return $len;
+        $headers[strtolower(trim($header[0]))] = trim($header[1]);
+        return $len;
+      });
+      $response = curl_exec($ch);
+      fclose($file_stream);
+      if($response !== false) {
+        if (isset($headers['wpt_status_code']) && $headers['wpt_status_code'] == '0') {
+          $ret = true;
+        } else {
+          $error_log = GetSetting('error_log');
+          if ($error_log) {
+            if (isset($headers['wpt_status_code'])) {
+              error_log(gmdate('Y/m/d H:i:s - ') . "GET File $url : wpt_status_code {$headers['wpt_status_code']}\n", 3, $error_log);
+            } else {
+              error_log(gmdate('Y/m/d H:i:s - ') . "GET File $url : headers " . json_encode($headers) . "\n", 3, $error_log);
+            }
+          }
+        }
+      } else {
+        $error = curl_error($ch);
+        $error_log = GetSetting('error_log');
+        if ($error_log) {
+          error_log(gmdate('Y/m/d H:i:s - ') . "GET File $url : $error\n", 3, $error_log);
+        }
+        unlink($file_stream);
+      }
+      curl_close($ch);
+    }
+    if (!$ret) {
+      @unlink($file);
+    }
+  }
+  return $ret;
+}
+
+/**
+ * Add a job to a scheduler queue
+ */
+function AddSchedulerJob($jobID, $job, $scheduler, $scheduler_salt, $scheduler_node, $host, $priority) {
+  $url = "{$scheduler}hawkscheduleserver/wpt-enq.ashx?test=$jobID&node=$scheduler_node&priority=$priority";
+  $cpid = GetCPID($host, $scheduler_salt);
+  $result = cp_http_post($url, $job, $cpid);
+  $ret = false;
+  if (isset($result))
+    $ret = true;
+  return $ret;
+}
+
+function GetSchedulerTestStatus($testID) {
+  // cache the status in apc for 15 seconds so we don't hammer the scheduler
+  $cache_key = "scheduler-status-$testID";
+  $status = CacheFetch($cache_key);
+  if (isset($status) && !is_array($status)) {
+    $status = null;
+  }
+
+  if (!isset($status)) {  
+    $scheduler = GetSetting('cp_scheduler');
+    $scheduler_salt = GetSetting('cp_scheduler_salt');
+    $host = GetSetting('host');
+    if ($scheduler && $scheduler_salt) {
+      $url = "{$scheduler}hawkscheduleserver/wpt-test-queue.ashx?test=$testID";
+      $cpid = GetCPID($host, $scheduler_salt);
+      $status_text = cp_http_get($url, $cpid);
+      if (isset($status_text)) {
+        if (strlen($status_text)) {
+          $status = json_decode($status_text, true);
+        } else {
+          $status = array();
+        }
+        CacheStore($cache_key, $status, 15);
+      }
+    }
+  }
+  return $status;
 }
 
 /**
@@ -1573,101 +1834,6 @@ function AddJobFile($location, $workDir, $file, $priority, $queue_limit = 0)
         $ret = SaveJobQueue($workDir, $queue);
   }
 
-  return $ret;
-}
-
-function AddTestJobHead($location, $job, $workDir, $fileName, $priority, $atFront) {
-  $ret = false;
-  if (isset($job) && strlen($job)) {
-    $info = GetLocationInfo($location);
-    if (isset($info) && is_array($info) && isset($info['queue'])) {
-      // explicitly configured work queues do not support multiple priorities for status
-      // though they do for the actual jobs.
-      $queueType = $info['queue'];
-      $addr = GetSetting("{$queueType}Addr");
-      $port = GetSetting("{$queueType}Port");
-      if ($queueType == 'beanstalk' && $addr && $port) {
-        try {
-          require_once('./lib/beanstalkd/pheanstalk_init.php');
-          $pheanstalk = new Pheanstalk_Pheanstalk($addr, $port);
-          $tube = 'wpt.work.' . sha1($location);
-          $message = gzdeflate(json_encode(array('job' => $job)), 7);
-          if ($message) {
-            $pheanstalk->putInTube($tube, $message, 0);
-            $ret = true;
-          }
-        } catch(Exception $e) {
-        }
-      }
-    } else {
-      AddJobFileHead($location, $workDir, $fileName, $priority, $atFront);
-    }
-  }
-  return $ret;
-}
-
-/**
-* Add a job to the front of the work queue (assume it is locked)
-*/
-function AddJobFileHead($location, $workDir, $file, $priority, $atFront = false)
-{
-  $ret = false;
-
-  $info = GetLocationInfo($location);
-  if (isset($info) && is_array($info) && isset($info['queue'])) {
-    // explicitly configured work queues do not support multiple priorities for status
-    // though they do for the actual jobs.
-    $queueType = $info['queue'];
-    $addr = GetSetting("{$queueType}Addr");
-    $port = GetSetting("{$queueType}Port");
-    if ($queueType == 'beanstalk' && $addr && $port) {
-      try {
-        require_once('./lib/beanstalkd/pheanstalk_init.php');
-        $pheanstalk = new Pheanstalk_Pheanstalk($addr, $port);
-        $tube = 'wpt.work.' . sha1($location);
-        $job = file_get_contents($file);
-        if (isset($job) && strlen($job)) {
-          $message = gzdeflate(json_encode(array('file' => $file, 'job' => $job)), 7);
-          if ($message) {
-            $pheanstalk->putInTube($tube, $message, 0);
-            $ret = true;
-          }
-        }
-      } catch(Exception $e) {
-      }
-    }
-  } else {
-    $use_beanstalk = false;
-    $beanstalkd = GetSetting('beanstalkd');
-    if ($beanstalkd && strlen($beanstalkd)) {
-      if ($priority || !GetSetting('beanstalk_api_only'))
-        $use_beanstalk = true;
-    }
-    if ($use_beanstalk) {
-      try {
-        $tube = 'wpt.' . md5($workDir) . ".$priority";
-        require_once('./lib/beanstalkd/pheanstalk_init.php');
-        $pheanstalk = new Pheanstalk_Pheanstalk($beanstalkd);
-        $pheanstalk->putInTube($tube, $file, 0);
-        $ret = true;
-      } catch(Exception $e) {
-      }
-    } else {
-      if ($lock = LockLocation($location)) {
-        if (LoadJobQueue($workDir, $queue)) {
-          // we actually want to insert it as the second test if there is already a queue
-          if (!$atFront && count($queue[$priority]))
-            $first = array_shift($queue[$priority]);
-          if (array_unshift($queue[$priority], $file)) {
-            if (!$atFront && isset($first) && strlen($first))
-              array_unshift($queue[$priority], $first);
-            $ret = SaveJobQueue($workDir, $queue);
-          }
-        }
-        Unlock($lock);
-      }
-    }
-  }
   return $ret;
 }
 
@@ -1914,20 +2080,11 @@ function SaveJobQueue($workDir, &$queue)
 * @param mixed $dir
 */
 function GetTesters($locationId, $includeOffline = false, $include_sensitive = true) {
-  $location = null;
-
   // cache the location testers info for up to one minute
   $cache_key = "$locationId-$includeOffline-$include_sensitive";
-  if (function_exists('apcu_fetch')) {
-    $location = apcu_fetch($cache_key);
-    if (isset($location) && $location !== false) {
-      return $location;
-    }
-  } elseif (function_exists('apc_fetch')) {
-    $location = apc_fetch($cache_key);
-    if (isset($location) && $location !== false) {
-      return $location;
-    }
+  $location = CacheFetch($cache_key);
+  if (isset($location)) {
+    return $location;
   }
 
   $location = array();
@@ -2037,11 +2194,7 @@ function GetTesters($locationId, $includeOffline = false, $include_sensitive = t
   else
     $location['status'] = 'OFFLINE';
 
-  if (function_exists('apcu_store')) {
-    apcu_store($cache_key, $location, 60);
-  } elseif (function_exists('apc_store')) {
-    apc_store($cache_key, $location, 60);
-  }
+  CacheStore($cache_key, $location, 60);
 
   return $location;
 }
@@ -2278,14 +2431,49 @@ function xml_entities($text, $charset = 'UTF-8')
 }
 
 /**
+ * Normalize all of the keys to only include alphanumeric characters
+ */
+function normalize_keys(&$array) {
+  if (isset($array) && is_array($array)) {
+    // Build a list of keys that need fixing (don't modify the array wile iterating)
+    $keys = array();
+    foreach ($array as $key => $value) {
+      if (!preg_match('/^[0-9a-zA-Z]+$/', $key)) {
+        $keys[] = $key;
+      }
+      // recursively normalize any arrays
+      if (is_array($value)) {
+        normalize_keys($array[$key]);
+      }
+    }
+
+    // Normalize the actual keys
+    foreach($keys as $key) {
+      $new_key = preg_replace('/[^0-9a-zA-Z]+/', '', $key);
+      if (strlen($new_key) && $new_key != $key) {
+        $array[$new_key] = $array[$key];
+        unset($array[$key]);
+      }
+    }
+  }
+}
+
+/**
  * Send a JSON response (including callback for JSONP)
  *
  * @param mixed $response
  */
-function json_response(&$response) {
+function json_response(&$response, $allow_crossorigin=true) {
     header("Content-type: application/json; charset=utf-8");
-    header("Cache-Control: no-cache, must-revalidate");
+    header("Cache-Control: no-cache, must-revalidate", true);
     header("Expires: Sat, 26 Jul 1997 05:00:00 GMT");
+    if ($allow_crossorigin) {
+      header('Access-Control-Allow-Origin: *');
+    }
+
+    if (isset($_REQUEST['normalizekeys']) && $_REQUEST['normalizekeys']) {
+      normalize_keys($response);
+    }
 
     if( array_key_exists('callback', $_REQUEST) && strlen($_REQUEST['callback']) )
         echo "{$_REQUEST['callback']}(";
@@ -2330,9 +2518,11 @@ function ValidateTestId(&$id) {
   }
 
   if (preg_match('/^(?:[a-zA-Z0-9_]+\.?)+$/', @$testId)) {
-    if (!defined('OLD_TEST') && intval(substr($testId, 0, 2)) < intval(date("y")) - 1)
-      define('OLD_TEST', true);
-    $valid = true;
+    $testYear = intval(substr($testId, 0, 2));
+    $currentYear = intval(date("y"));
+    if ($testYear >= 8 && $testYear <= $currentYear) {
+      $valid = true;
+    }
   } else {
     $id = '';
   }
@@ -2413,20 +2603,29 @@ function http_fetch($url) {
 function http_fetch_file($url, $file) {
   $ret = false;
   if (function_exists('curl_init')) {
+    $httpcode = 0;
     $fp = fopen ($file, 'w+');
     if ($fp) {
       $ch = curl_init($url);
       if ($ch) {
+        $headers = array(
+          "Fastly-Client-IP: {$_SERVER['REMOTE_ADDR']}",
+          "User-Agent: {$_SERVER['HTTP_USER_AGENT']}"
+        );
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_FILE, $fp);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
         curl_exec($ch);
+        $httpcode = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
         curl_close($ch);
       }
       fclose($fp);
-      $ret = filesize($file);
+      if($httpcode === 200) {
+        $ret = filesize($file);
+      } else {
+        unlink($file);
+      }
     }
-  } else {
-    $ret = file_put_contents($file, fopen($url, 'r'));
   }
   return $ret;
 }
@@ -2436,8 +2635,13 @@ function http_head($url) {
   if (function_exists('curl_init')) {
     $ok = true;
     $ch = curl_init($url);
+    $headers = array(
+      "Fastly-Client-IP: {$_SERVER['REMOTE_ADDR']}",
+      "User-Agent: {$_SERVER['HTTP_USER_AGENT']}"
+    );
     curl_setopt($ch, CURLOPT_NOBODY, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     $response = curl_exec($ch);
     $httpcode = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     curl_close($ch);
@@ -2452,11 +2656,16 @@ function http_put_raw($url, $body) {
   if (function_exists('curl_init')) {
     $ok = true;
     $ch = curl_init($url);
+    $headers = array(
+      "Fastly-Client-IP: {$_SERVER['REMOTE_ADDR']}",
+      "User-Agent: {$_SERVER['HTTP_USER_AGENT']}",
+      'Content-Type: text/plain'
+    );
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, 1 );
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
     curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: text/plain'));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     curl_setopt($ch, CURLOPT_FAILONERROR, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
@@ -2479,10 +2688,14 @@ function http_put_file($url, $file) {
       $ok = true;
       $ch = curl_init($url);
       curl_setopt($ch, CURLOPT_PUT, 1 );
-
+      $headers = array(
+        "Fastly-Client-IP: {$_SERVER['REMOTE_ADDR']}",
+        "User-Agent: {$_SERVER['HTTP_USER_AGENT']}",
+        'Content-Type: application/octet-stream'
+      );
+      curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
       curl_setopt($ch, CURLOPT_INFILE, $file_stream);
       curl_setopt($ch, CURLOPT_INFILESIZE, filesize($file));
-
       curl_setopt($ch, CURLOPT_FAILONERROR, true);
       curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
       curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
@@ -2500,15 +2713,20 @@ function http_put_file($url, $file) {
   return $ok;
 }
 
-function http_post_raw($url, $body) {
+function http_post_raw($url, $body, $content_type='text/plain', $return_response=FALSE) {
   $ok = false;
   if (function_exists('curl_init')) {
     $ok = true;
     $ch = curl_init($url);
+    $headers = array(
+      "Fastly-Client-IP: {$_SERVER['REMOTE_ADDR']}",
+      "User-Agent: {$_SERVER['HTTP_USER_AGENT']}",
+      "Content-Type: $content_type"
+    );
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, 1 );
     curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: text/plain'));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     curl_setopt($ch, CURLOPT_FAILONERROR, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
@@ -2519,6 +2737,8 @@ function http_post_raw($url, $body) {
     curl_close($ch);
     if($response === false)
         $ok = false;
+    if ($return_response)
+      return $response;
   }
   return $ok;
 }
@@ -2552,6 +2772,12 @@ function ShardKey($test_num, $locationID = null) {
       }
       $key .= '_';
     }
+  }
+
+  // Add the capture server if enabled
+  $capture_prefix = GetSetting('cp_capture_prefix');
+  if ($capture_prefix) {
+    $key = $capture_prefix . 'c' . $key;
   }
 
   // Add the location ID if we are using one
@@ -2614,7 +2840,8 @@ function makeLogLine($line_data) {
     $log = $line_data['date'] . "\t" . $line_data['ip'] . "\t0" . "\t0";
     $log .= "\t" . $line_data['guid'] . "\t" . $line_data['url'] . "\t". $line_data['location'] . "\t" . $line_data['private'];
     $log .= "\t". $line_data['testUID'] . "\t" . $line_data['testUser'] . "\t" . $line_data['video'] . "\t" . $line_data['label'];
-    $log .= "\t". $line_data['owner'] . "\t". $line_data['key'] . "\t" . $line_data['count'] . "\t" . $line_data['priority'] . "\r\n";
+    $log .= "\t". $line_data['owner'] . "\t". $line_data['key'] . "\t" . $line_data['count'] . "\t" . $line_data['priority'];
+    $log .= "\t" . $line_data['email'] . "\t" . $line_data['redis'] . "\r\n";
 
     return $log;
 }
@@ -2648,6 +2875,8 @@ function tokenizeLogLine($line) {
                 case 13: $line_data['o'] = $token; break;
                 case 14: $line_data['key'] = $token; break;
                 case 15: $line_data['count'] = $token; break;
+                case 16: $line_data['priority'] = $token; break;
+                case 17: $line_data['email'] = $token; break;
             }
         }
 
@@ -2781,6 +3010,7 @@ function NumToString($num) {
 */
 function GetTestInfo($testIdOrPath) {
   $testInfo = false;
+  $id = null;
 
   if (isset($testIdOrPath) && strlen($testIdOrPath)) {
     $testPath = $testIdOrPath;
@@ -2803,8 +3033,25 @@ function GetTestInfo($testIdOrPath) {
     }
   }
 
-  if (!isset($testInfo) || !is_array($testInfo))
+  // Try getting the test info directly from a remote server if it is not owned by the current server
+  if (!isset($testInfo) || !is_array($testInfo)) {
+    if (isset($id) && ValidateTestId($id)) {
+      $testServer = GetServerForTest($id);
+      if (isset($testServer)) {
+        $secret = GetServerSecret();
+        if (isset($secret)) {
+          $response = http_fetch("{$testServer}testInfo.php?test=$id&s=$secret");
+          if ($response) {
+            $testInfo = json_decode($response, true);
+          }
+        }
+      }
+    }
+  }
+
+  if (!isset($testInfo) || !is_array($testInfo)) {
     $testInfo = false;
+  }
 
   return $testInfo;
 }
@@ -2853,21 +3100,6 @@ function CopyArrayEntry(&$src, &$dest, $srcEntry, $destEntry = null) {
     $destEntry = $srcEntry;
   if (array_key_exists($srcEntry, $src))
     $dest[$destEntry] = $src[$srcEntry];
-}
-
-function IsTestRunComplete($run, &$testInfo) {
-  $completed = false;
-  if ($testInfo) {
-    if (array_key_exists('completed', $testInfo) && $testInfo['completed']) {
-      $completed = true;
-    } elseif (array_key_exists('test_runs', $testInfo) &&
-              array_key_exists($run, $testInfo['test_runs']) &&
-              array_key_exists('done', $testInfo['test_runs'][$run]) &&
-              $testInfo['test_runs'][$run]['done']) {
-      $completed = true;
-    }
-  }
-  return $completed;
 }
 
 function logTestMsg($testIdOrPath, $message) {
@@ -2921,95 +3153,6 @@ function numRunsFromTestInfo($testInfo) {
     $runs -= $testInfo['discard'];
   }
   return $runs;
-}
-
-/**
-* Check an URL against the SBL
-*
-* @param mixed $url
-*/
-function SBL_Check($url, &$message) {
-  $ok = true;
-  $key = GetSetting('sbl_api_key');
-  if ($key && strlen($key)) {
-    $check = array(
-      'client' => array(
-        'clientId' => 'WebPageTest',
-        'clientVersion' => '1.0'
-      ),
-      'threatInfo' => array(
-        'threatTypes' => array('MALWARE'),
-        'platformTypes' => array('ALL_PLATFORMS'),
-        'threatEntryTypes' => array('URL'),
-        'threatEntries' => array(array('url' => $url))
-      )
-    );
-    $data = json_encode($check);
-    $api_url = "https://safebrowsing.googleapis.com/v4/threatMatches:find?key=$key";
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $api_url);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array("Content-Type: application/json", 'Content-Length: ' . strlen($data)));
-    curl_setopt($ch, CURLOPT_POST, 1);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-    $raw_response = curl_exec($ch);
-    $response = json_decode($raw_response, true);
-    curl_close ($ch);
-    if (isset($response) && is_array($response) && isset($response['matches'][0]['threatType'])) {
-      $ok = false;
-    }
-  }
-  return $ok;
-}
-
-/**
-* Check to see if we can use the python visual metrics processing script
-*
-*/
-function CheckPythonVisualMetrics(&$failures) {
-  $ok = false;
-  $failures = null;
-  if (function_exists('apcu_fetch')) {
-    $ok = apcu_fetch("PythonVisualMetrics");
-  } elseif (function_exists('apc_fetch')) {
-    $ok = apc_fetch("PythonVisualMetrics");
-  }
-  if (!$ok) {
-    if (is_file(__DIR__ . '/video/visualmetrics.py')) {
-      $script = realpath(__DIR__ . '/video/visualmetrics.py');
-      $command = "python \"$script\" -c 2>&1";
-      exec($command, $output, $result);
-      if (isset($output) && is_array($output) && count($output)) {
-        foreach ($output as $line) {
-          $parts = explode(':', $line);
-          if (count($parts) == 2) {
-            $module = trim($parts[0]);
-            $status = trim($parts[1]);
-            if ($status == 'OK') {
-              $ok = true;
-            } else {
-              if (!isset($failures))
-                $failures = array();
-              $failures[] = $module;
-            }
-          }
-        }
-      }
-    }
-    if (isset($failures)) {
-      $ok = false;
-    }
-    if ($ok && function_exists('apcu_store')) {
-      apcu_store("PythonVisualMetrics", $ok, 3600);
-    } elseif ($ok && function_exists('apc_store')) {
-      apc_store("PythonVisualMetrics", $ok, 3600);
-    }
-  }
-  return $ok;
 }
 
 function ZipExtract($zipFile, $path) {
@@ -3195,4 +3338,394 @@ function GetSortableString($num, $targetLen = 6) {
   }
   $str = str_pad($str, $targetLen, '0', STR_PAD_LEFT);
   return $str;
+}
+
+// Proxy the current GET request to the given destination
+// requires CURL
+$PROXY_REQUEST_HOST = null;
+$PROXY_CURRENT_HOST = null;
+function proxy_request($proxy_host) {
+  global $PROXY_REQUEST_HOST, $PROXY_CURRENT_HOST;
+  $PROXY_REQUEST_HOST = $proxy_host;
+  $PROXY_CURRENT_HOST  = $_SERVER['HTTP_HOST'];
+  $protocol = getUrlProtocol();
+  $url = $protocol . '://' . $proxy_host . $_SERVER['REQUEST_URI'];
+
+  // Initialize curl
+  $ch = curl_init($url);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+  curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+  curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
+
+  // populate the request headers
+  $headers = array();
+  if (function_exists('getallheaders')) {
+    $headers = getallheaders();
+  } else {
+    foreach ($_SERVER as $name => $value) {
+        if (substr($name, 0, 5) == 'HTTP_') {
+            $headers[str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))))] = $value;
+        }
+    }
+  }  
+  $request_headers = array();
+  foreach( $headers as $name => $value) {
+    if (strcasecmp($name, "host") !== 0 &&
+        strcasecmp($name, "accept-encoding") !== 0 &&
+        strlen($value)) {
+      $request_headers[] = "$name: $value";
+    }
+  }
+  curl_setopt($ch, CURLOPT_HTTPHEADER, $request_headers);
+
+  // Handle response headers as they come in
+  curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($curl, $header) {
+    global $PROXY_REQUEST_HOST, $PROXY_CURRENT_HOST;
+    header(str_replace($PROXY_REQUEST_HOST, $PROXY_CURRENT_HOST, $header));
+    return strlen($header);
+  });
+
+  // stream the response
+  curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($curl, $body) {
+    echo $body;
+    return strlen($body);
+  });
+
+  $response = curl_exec($ch);
+  curl_close($ch);
+}
+
+// Sync the server status with others in the cluster
+function server_sync($apiKey, $runCount, $logline) {
+  $servers_str = GetSetting("sync-servers");
+  $secret = GetSetting("sync-secret");
+  if (is_string($servers_str) && is_string($secret) && strlen($secret)) {
+    $servers = explode(',', $servers_str);
+    $data = array('secret' => $secret);
+    $ok = false;
+    if (isset($apiKey) && $runCount) {
+      $data['key'] = $apiKey;
+      $data['runs'] = $runCount;
+      $ok = true;
+    }
+    if (isset($logline) && strlen($logline)) {
+      $data['history'] = $logline;
+      $ok = true;
+    }
+    $options = array(
+      'http' => array(
+          'header'  => "Content-type: application/x-www-form-urlencoded\r\n",
+          'method'  => 'POST',
+          'timeout' => 5,
+          'content' => http_build_query($data)
+      )
+    );
+    if ($ok) {
+      $host = GetSetting('hostname');
+      foreach ($servers as $url) {
+        $sync_host = parse_url($url, PHP_URL_HOST);
+        if ($sync_host != $host) {
+          $context  = stream_context_create($options);
+          file_get_contents($url, false, $context);
+        }
+      }
+    }
+  }
+}
+
+
+function GetServerSecret() {
+  // cache the status in apc for 15 seconds so we don't hammer the scheduler
+  $secret = CacheFetch('server-secret');
+  if (isset($secret) && !is_string($secret)) {
+    $secret = null;
+  }
+  if (!isset($secret)) {
+    $keys_file = __DIR__ . '/settings/keys.ini';
+    if (file_exists(__DIR__ . '/settings/common/keys.ini'))
+      $keys_file = __DIR__ . '/settings/common/keys.ini';
+    if (file_exists(__DIR__ . '/settings/server/keys.ini'))
+      $keys_file = __DIR__ . '/settings/server/keys.ini';
+    $keys = parse_ini_file($keys_file, true);
+    if (isset($keys) && isset($keys['server']['secret'])) {
+      $secret = trim($keys['server']['secret']);
+    }
+
+    $ttl = 3600;
+    if (!isset($secret)) {
+      $secret = '';
+      $ttl = 60;
+    }
+    CacheStore('server-secret', $secret, $ttl);
+  }
+  return $secret;
+}
+
+function GetServerKey() {
+  // cache the status in apc for 15 seconds so we don't hammer the scheduler
+  $key = CacheFetch('server-key');
+  if (isset($key) && !is_string($key)) {
+    $key = null;
+  }
+  if (!isset($key)) {
+    $keys_file = __DIR__ . '/settings/keys.ini';
+    if (file_exists(__DIR__ . '/settings/common/keys.ini'))
+      $keys_file = __DIR__ . '/settings/common/keys.ini';
+    if (file_exists(__DIR__ . '/settings/server/keys.ini'))
+      $keys_file = __DIR__ . '/settings/server/keys.ini';
+    $keys = parse_ini_file($keys_file, true);
+    if (isset($keys) && isset($keys['server']['key'])) {
+      $key = trim($keys['server']['key']);
+    }
+
+    $ttl = 3600;
+    if (!isset($key)) {
+      $key = '';
+      $ttl = 60;
+    }
+    CacheStore('server-key', $key, $ttl);
+  }
+  return $key;
+}
+
+
+function SignString($string) {
+  return sha1($string . GetServerSecret());
+}
+
+function GetSamlAttribute($index) {
+  $saml_cookie = GetSetting('saml_cookie', 'samlu');
+  if (isset($_REQUEST['samlu'])) {
+    $_COOKIE[$saml_cookie] = $_REQUEST['samlu'];
+  }
+  if (isset($_COOKIE[$saml_cookie])) {
+    $parts = explode('.', $_COOKIE[$saml_cookie]);
+    if (count($parts) == 2) {
+      if ($parts[1] == SignString($parts[0])) {
+        $info = base64_decode($parts[0]);
+        $attributes = explode("\t", $info);
+        if (count($attributes) > $index) {
+          return $attributes[$index];
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function GetSamlAccount() {
+  $ret = GetSamlAttribute(0);
+  if (isset($ret))
+    $ret = intval($ret);
+  return $ret;
+}
+
+function GetSamlEmail(){
+  return GetSamlAttribute(1);
+}
+
+function GetSamlFirstName() {
+  return GetSamlAttribute(2);
+}
+
+function GetSamlLastName() {
+  return GetSamlAttribute(3);
+}
+
+function GetSamlContact() {
+  $ret = GetSamlAttribute(4);
+  if (isset($ret))
+    $ret = intval($ret);
+  return $ret;
+}
+
+/**
+* Send a quick http request locally if we need to process cron events (to each of the cron entry points)
+* 
+* This only runs events on 5-minute intervals and tries to keep it close to the clock increments (00, 15, 30, 45)
+* 
+*/
+function CheckCron() {
+  // open and lock the cron job file - abandon quickly if we can't get a lock
+  $should_run = false;
+  $minutes15 = false;
+  $minutes60 = false;
+  $cron_lock = Lock("Cron Check", false, 1200);
+  if (isset($cron_lock)) {
+    $last_run = 0;
+    if (is_file('./tmp/wpt_cron.dat'))
+      $last_run = file_get_contents('./tmp/wpt_cron.dat');
+    $now = time();
+    $elapsed = $now - $last_run;
+    if (!$last_run) {
+        $should_run = true;
+        $minutes15 = true;
+        $minutes60 = true;
+    } elseif ($elapsed > 120) {
+      if ($elapsed > 1200) {
+        // if it has been over 20 minutes, run regardless of the wall-clock time
+        $should_run = true;
+      } else {
+        $minute = gmdate('i', $now) % 5;
+        if ($minute < 2) {
+          $should_run = true;
+          $minute = gmdate('i', $now) % 15;
+          if ($minute < 2)
+            $minutes15 = true;
+          $minute = gmdate('i', $now) % 60;
+          if ($minute < 2)
+            $minutes60 = true;
+        }
+      }
+    }
+    if ($should_run)
+      file_put_contents('./tmp/wpt_cron.dat', $now);
+    Unlock($cron_lock);
+  }
+  
+  // send the cron requests
+  if ($should_run) {
+    SendAsyncRequest('/cron/5min.php');
+    if (is_file('./jpeginfo/cleanup.php'))
+      SendAsyncRequest('/jpeginfo/cleanup.php');
+    if ($minutes15)
+      SendAsyncRequest('/cron/15min.php');
+    if ($minutes60)
+      SendAsyncRequest('/cron/hourly.php');
+  }
+}
+
+function GetServerForTest($id) {
+  $server_url = null;
+  if (preg_match('/^\d\d\d\d\d\d_([^_i]+)i/', $id, $matches)) {
+    $test_server = $matches[1];
+    $current_server = GetSetting('serverID', null);
+    if (isset($current_server) && $current_server != $test_server) {
+      $server_url = GetSetting("server_$test_server");
+    }
+  }
+  return $server_url;
+}
+
+// See if the test is beyond the archive retention period (if configured)
+function TestArchiveExpired($id) {
+  $retain_months = GetSetting('archive_retention_months', null);
+  if (isset($retain_months) && is_numeric($retain_months) && isset($id) && is_string($id)) {
+    if (preg_match('/^(\d\d\d\d\d\d)/', $id, $matches)) {
+      $test_date = date_create_from_format('ymd', $matches[1]);
+      if ($test_date) {
+        $now = date_create();
+        if ($now) {
+          $retain_months = intval($retain_months);
+          $elapsed = $now->getTimestamp() - $test_date->getTimestamp();
+          if ($elapsed && $elapsed > $retain_months * 31 * 86400) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Generate a unique test ID
+ */
+function GenerateTestID($private=true, $locationShard=null) {
+  $test_num;
+  $id = uniqueId($test_num);
+  if( $private )
+      $id = ShardKey($test_num, $locationShard) . md5(uniqid(rand(), true));
+  else
+      $id = ShardKey($test_num, $locationShard) . $id;
+  $today = new DateTime("now", new DateTimeZone('UTC'));
+  $testId = $today->format('ymd_') . $id;
+  $path = __DIR__ . '/' . GetTestPath($testId);
+
+  // make absolutely CERTAIN that this test ID doesn't already exist
+  while( is_dir($path) )
+  {
+      // fall back to random ID's
+      $id = ShardKey($test_num, $locationShard) . md5(uniqid(rand(), true));
+      $testId = $today->format('ymd_') . $id;
+      $path = __DIR__ . '/' . GetTestPath($testId);
+  }
+
+  return $testId;
+}
+
+/**
+* Add a single entry to ini-style files
+* @param mixed $ini
+* @param mixed $key
+* @param mixed $value
+*/
+function AddIniLine(&$ini, $key, $value) {
+  if (isset($value) && strpos($value, "\n") === false && strpos($value, "\r") === false) {
+    $ini .= "$key=$value\r\n";
+  }
+}
+
+/**
+ * Geterate a testingo.ini and testinfo.json for an uploaded job file
+ */
+function ProcessUploadedTest($id) {
+  if (ValidateTestId($id)) {
+    $testPath = __DIR__ . '/' . GetTestPath($id);
+    if (gz_is_file("$testPath/job.json")) {
+      $job = json_decode(gz_file_get_contents("$testPath/job.json"), true);
+      $test = $job;
+      $test['id'] = $id;
+      $test['Test ID'] = $id;
+      $test['completed'] = time();
+      if (!isset($test['started']))
+        $test['started'] = $test['completed'];
+      if (isset($test['Capture Video']) && $test['Capture Video'])
+        $test['video'] = 1;
+      if ((isset($test['pngScreenShot']) && $test['pngScreenShot']))
+        $test['pngss'] = 1;
+      if (isset($test['imageQuality']) && $test['imageQuality'])
+        $test['test'] = $test['imageQuality'];
+      if (isset($test['clearRV']) && $test['clearRV'])
+        $test['clear_rv'] = 1;
+      $test['published'] = 1;
+
+      // Figure out the location text
+      $locations = LoadLocationsIni();
+      if (isset($test['location']) && isset($locations[$test['location']]['label'])) {
+        $test['locationText'] = $locations[$test['location']]['label'];
+      }
+
+      // Generate a testinfo.ini
+      $ini = "[test]\r\n";
+      AddIniLine($ini, "fvonly", $test['fvonly']);
+      AddIniLine($ini, "timeout", $test['timeout']);
+      AddIniLine($ini, "runs", $test['runs']);
+      AddIniLine($ini, "location", "\"{$test['locationText']}\"");
+      AddIniLine($ini, "loc", $test['location']);
+      AddIniLine($ini, "id", $test['id']);
+      AddIniLine($ini, "sensitive", $test['sensitive']);
+      if( isset($test['login']) && strlen($test['login']) )
+          AddIniLine($ini, "authenticated", "1");
+      AddIniLine($ini, "connections", $test['connections']);
+      if( isset($test['script']) && strlen($test['script']) )
+          AddIniLine($ini, "script", "1");
+      AddIniLine($ini, "notify", $test['notify']);
+      AddIniLine($ini, "video", "1");
+      AddIniLine($ini, "disable_video", $test['disable_video']);
+      AddIniLine($ini, "uid", $test['uid']);
+      AddIniLine($ini, "owner", $test['owner']);
+      AddIniLine($ini, "type", $test['type']);
+      AddIniLine($ini, "connectivity", $test['connectivity']);
+      AddIniLine($ini, "bwIn", $test['bwIn']);
+      AddIniLine($ini, "bwOut", $test['bwOut']);
+      AddIniLine($ini, "latency", $test['latency']);
+      AddIniLine($ini, "plr", $test['plr']);
+      AddIniLine($ini, "completeTime", gmdate("m/d/y G:i:s", $test['completed']));
+      file_put_contents("$testPath/testinfo.ini",  $ini);
+
+      // Generate the testinfo.json
+      gz_file_put_contents("$testPath/testinfo.json", json_encode($test));
+    }
+  }
 }

@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 require 'common.inc';
 require_once __DIR__ . '/include/TestInfo.php';
@@ -8,7 +11,7 @@ require_once __DIR__ . '/include/TestStepResult.php';
 global $testPath, $run, $cached, $step;  // set in common.inc. This is for IDE to know what exists
 
 $requestedSnippet = $_REQUEST["snippet"];
-$useLinks = !$settings['nolinks'];
+$useLinks = !GetSetting('nolinks');
 $testInfo = TestInfo::fromFiles($testPath);
 $stepResult = TestStepResult::fromFiles($testInfo, $run, $cached, $step);
 
@@ -21,8 +24,7 @@ switch ($requestedSnippet) {
   case "waterfall":
     require_once __DIR__ . '/include/WaterfallViewHtmlSnippet.php';
 
-    $enableCsi = (array_key_exists('enable_google_csi', $settings) && $settings['enable_google_csi']);
-    $waterfallSnippet = new WaterfallViewHtmlSnippet($testInfo, $stepResult, $enableCsi);
+    $waterfallSnippet = new WaterfallViewHtmlSnippet($testInfo, $stepResult);
     echo $waterfallSnippet->create();
     break;
 

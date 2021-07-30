@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 require_once('object_detail.inc');
 require_once('page_data.inc');
@@ -26,13 +29,13 @@ $page_keywords = array('Performance Test','Details','WebPageTest','Website Speed
 $page_description = "Website performance test details$testLabel";
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest Test Details<?php echo $testLabel; ?></title>
         <?php $gaTemplate = 'Details'; include ('head.inc'); ?>
         <style type="text/css">
         div.bar {
-            height:12px;
+            height:20px;
             margin-top:auto;
             margin-bottom:auto;
         }
@@ -77,6 +80,11 @@ $page_description = "Website performance test details$testLabel";
           width: 30em;
           word-wrap: break-word;
         }
+        table.details th.reqMime, table.details td.reqMime {
+          max-width: 10em;
+          word-wrap: break-word;
+          overflow: hidden;
+        }
         table.details td.even {
           background: gainsboro;
         }
@@ -114,8 +122,7 @@ $page_description = "Website performance test details$testLabel";
         ?>
         </style>
     </head>
-    <body>
-        <div class="page">
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
             <?php
             $tab = 'Test Result';
             $subtab = 'Details';
@@ -131,8 +138,6 @@ $page_description = "Website performance test details$testLabel";
                     </div>
                     <?php
                         echo '<a href="/export.php?' . "test=$id&run=$run&cached=$cached&bodies=1&pretty=1" . '">Export HTTP Archive (.har)</a>';
-                        if ( is_dir('./google') && array_key_exists('enable_google_csi', $settings) && $settings['enable_google_csi'] )
-                            echo '<br><a href="/google/google_csi.php?' . "test=$id&run=$run&cached=$cached" . '">CSI (.csv) data</a>';
                         if (array_key_exists('custom', $data) && is_array($data['custom']) && count($data['custom']))
                             echo '<br><a href="/custom_metrics.php?' . "test=$id&run=$run&cached=$cached" . '">Custom Metrics</a>';
                         if( is_file("$testPath/{$run}{$cachedText}_dynaTrace.dtas") )
@@ -146,55 +151,22 @@ $page_description = "Website performance test details$testLabel";
                     ?>
                 </div>
                 <div class="cleared"></div>
-                <br>
-
                 <?php
                   $htmlTable = new RunResultHtmlTable($testInfo, $testRunResults);
                   echo $htmlTable->create();
                 ?>
                 <br>
                 <?php
-                if( is_dir('./google') && isset($test['testinfo']['extract_csi']) )
-                {
-                    require_once('google/google_lib.inc');
-                ?>
-                    <h2>CSI Metrics</h2>
-                            <table id="tableCustomMetrics" class="pretty" align="center" border="1" cellpadding="10" cellspacing="0">
-                               <tr>
-                            <?php
-                                if ($isMultistep) {
-                                    echo '<th align="center" class="border" valign="middle">Step</th>';
-                                }
-                                foreach ( $test['testinfo']['extract_csi'] as $csi_param )
-                                    echo '<th align="center" class="border" valign="middle">' . $csi_param . '</th>';
-                                echo "</tr>\n";
-                                foreach ($testRunResults->getStepResults() as $stepResult) {
-                                    echo "<tr>\n";
-                                    if (GetSetting('enable_csi'))
-                                      $params = ParseCsiInfoForStep($stepResult->createTestPaths(), true);
-                                    if ($isMultistep) {
-                                        echo '<td class="even" valign="middle">' . $stepResult->readableIdentifier() . '</td>';
-                                    }
-                                    foreach ( $test['testinfo']['extract_csi'] as $csi_param )
-                                    {
-                                        if( isset($params) && array_key_exists($csi_param, $params) )
-                                        {
-                                            echo '<td class="even" valign="middle">' . $params[$csi_param] . '</td>';
-                                        }
-                                        else
-                                        {
-                                            echo '<td class="even" valign="middle">&nbsp;</td>';
-                                        }
-                                    }
-                                    echo "</tr>\n";
-                                }
-                            ?>
-                    </table><br>
-                <?php
-                }
                 $userTimingTable = new UserTimingHtmlTable($testRunResults);
                 echo $userTimingTable->create();
-
+                if (isset($testRunResults)) {
+                  require_once(__DIR__ . '/include/CrUX.php');
+                  if ($cached) {
+                    InsertCruxHTML(null, $testRunResults);
+                  } else {
+                    InsertCruxHTML($testRunResults, null);
+                  }
+                }
                 ?>
                 <script type="text/javascript">
                   markUserTime('aft.Detail Table');
@@ -220,7 +192,7 @@ $page_description = "Website performance test details$testLabel";
                         echo "<td><a href='" . $urlGenerator->stepDetailPage("http2_dependencies") . "'>HTTP/2 Dependency Graph</a></td>";
                         echo "</tr>";
                     }
-                    echo "</table>\n<br>\n";
+                    echo "</table>\n";
                     $accordionHelper = new AccordionHtmlHelper($testRunResults);
                 }
                 ?>
@@ -231,8 +203,7 @@ $page_description = "Website performance test details$testLabel";
                     if ($isMultistep) {
                         echo $accordionHelper->createAccordion("waterfall_view", "waterfall");
                     } else {
-                        $enableCsi = (array_key_exists('enable_google_csi', $settings) && $settings['enable_google_csi']);
-                        $waterfallSnippet = new WaterfallViewHtmlSnippet($testInfo, $testRunResults->getStepResult(1), $enableCsi);
+                        $waterfallSnippet = new WaterfallViewHtmlSnippet($testInfo, $testRunResults->getStepResult(1));
                         echo $waterfallSnippet->create();
                     }
                 ?>
@@ -249,7 +220,6 @@ $page_description = "Website performance test details$testLabel";
                     ?>
                 </div>
                 <br><br>
-                <?php include('./ads/details_middle.inc'); ?>
 
                 <br>
                 <h3 name="request_details_view">Request Details</h3>
@@ -257,14 +227,13 @@ $page_description = "Website performance test details$testLabel";
                     if ($isMultistep) {
                         echo $accordionHelper->createAccordion("request_details", "requestDetails", "initDetailsTable");
                     } else {
-                        $useLinks = !$settings['nolinks'];
+                        $useLinks = !GetSetting('nolinks');
                         $requestDetailsSnippet = new RequestDetailsHtmlSnippet($testInfo, $testRunResults->getStepResult(1), $useLinks);
                         echo $requestDetailsSnippet->create();
                     }
                 ?>
 
                 <br>
-                <?php include('./ads/details_bottom.inc'); ?>
                 <br>
                 <?php
                     echo '';
@@ -279,17 +248,16 @@ $page_description = "Website performance test details$testLabel";
                         $snippet = $requestHeadersSnippet->create();
                         if ($snippet) {
                             echo '<div id="headers">';
-                            echo '<br><hr><h2>Request Headers</h2>';
+                            echo '<br><hr><h3>Request Headers</h3>';
                             echo $snippet;
                             echo '</div>';
                         }
                     }
                 ?>
             </div>
-
+                </div>
             <?php include('footer.inc'); ?>
         </div>
-        <a href="#top" id="back_to_top">Back to top</a>
 
         <?php
         if ($isMultistep) {
@@ -325,7 +293,8 @@ $page_description = "Website performance test details$testLabel";
                     6: { sorter:'currency' } ,
                     7: { sorter:'currency' } ,
                     8: { sorter:'currency' } ,
-                    9: { sorter:'currency' }
+                    9: { sorter:'currency' } ,
+                    10: { sorter:'currency' }
                 }
             });
         }

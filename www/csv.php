@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 require_once('page_data.inc');
 require_once('breakdown.inc');
@@ -27,7 +30,7 @@ if( isset($test['test']) && (isset($test['test']['completeTime']) || $test['test
   }
   header("Content-disposition: attachment; filename=$filename");
   header ("Content-type: text/csv");
-  header("Cache-Control: no-cache, must-revalidate");
+  header("Cache-Control: no-cache, must-revalidate", true);
   header("Expires: Sat, 26 Jul 1997 05:00:00 GMT");
 
   if ($test['test']['batch']) {

@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include __DIR__ . '/common.inc';
 require_once __DIR__ . '/object_detail.inc';
 require_once __DIR__ . '/page_data.inc';
@@ -19,7 +22,7 @@ $page_description = "Website speed test images$testLabel.";
 $userImages = true;
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
   <head>
     <title>WebPageTest Page Images<?php echo $testLabel; ?></title>
     <?php $gaTemplate = 'Page Images'; include ('head.inc'); ?>
@@ -31,8 +34,7 @@ $userImages = true;
       }
     </style>
   </head>
-  <body>
-    <div class="page-wide">
+  <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
       <?php
       $tab = 'Test Result';
       $subtab = null;
@@ -87,8 +89,8 @@ $userImages = true;
           ?>
         </table>
       </div>
+      </div>
 
       <?php include('footer.inc'); ?>
-    </div>
   </body>
 </html>

@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 // Do a really quick check for a pending test to significantly reduce overhead
 if (isset($_REQUEST['noposition']) &&
     $_REQUEST['noposition'] &&
@@ -15,7 +18,7 @@ if (isset($_REQUEST['noposition']) &&
   $pendingFile = "$base/$y/$m/$d/$dir/test.waiting";
   if (is_file($pendingFile)) {
     header("Content-type: application/json; charset=utf-8");
-    header("Cache-Control: no-cache, must-revalidate");
+    header("Cache-Control: no-cache, must-revalidate", true);
     header("Expires: Sat, 26 Jul 1997 05:00:00 GMT");
 
     if( array_key_exists('callback', $_REQUEST) && strlen($_REQUEST['callback']) )

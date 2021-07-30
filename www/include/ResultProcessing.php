@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 require_once __DIR__ . '/../common_lib.inc';
 require_once __DIR__ . '/../page_data.inc';
@@ -64,10 +67,6 @@ class ResultProcessing {
         getBreakdownForStep($stepPaths, $rootUrls, $requests);
       } else {
         $testerError = 'Missing Results';
-      }
-      if (GetSetting('enable_csi') && is_dir(__DIR__ . '/../google') && is_file(__DIR__ . '/../google/google_lib.inc')) {
-        require_once(__DIR__ . '/../google/google_lib.inc');
-        ParseCsiInfoForStep($stepPaths, true);
       }
     }
     return $testerError;

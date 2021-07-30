@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 chdir('..');
 include 'common.inc';
 $loc = GetDefaultLocation();
@@ -7,21 +10,25 @@ $run= array_key_exists('run', $_GET) ? $_GET['run'] : 0;
 $page_keywords = array('Video','comparison','WebPageTest','Website Speed Test');
 $page_description = "Visually compare the performance of multiple websites with a side-by-side video and filmstrip view of the user experience.";
 $profiles = null;
-if (is_file(__DIR__ . '/../settings/profiles.ini'))
-  $profiles = parse_ini_file(__DIR__ . '/../settings/profiles.ini', true);
+$profile_file = __DIR__ . '/../settings/profiles.ini';
+if (file_exists(__DIR__ . '/../settings/common/profiles.ini'))
+  $profile_file = __DIR__ . '/../settings/common/profiles.ini';
+if (file_exists(__DIR__ . '/../settings/server/profiles.ini'))
+  $profile_file = __DIR__ . '/../settings/server/profiles.ini';
+if (is_file($profile_file))
+  $profiles = parse_ini_file($profile_file, true);
 ?>
 
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest - Visual Comparison</title>
         <?php $gaTemplate = 'Visual Test'; include ('head.inc'); ?>
     </head>
-    <body>
-        <div class="page">
+    <body class="home<?php if ($COMPACT_MODE) {echo ' compact';} ?>">
             <?php
             $siteKey = GetSetting("recaptcha_site_key", "");
-            if (!isset($uid) && !isset($user) && !isset($this_user) && strlen($siteKey)) {
+            if (!isset($uid) && !isset($user) && !isset($USER_EMAIL) && strlen($siteKey)) {
               echo "<script src=\"https://www.google.com/recaptcha/api.js\" async defer></script>\n";
               ?>
               <script>
@@ -39,25 +46,46 @@ if (is_file(__DIR__ . '/../settings/profiles.ini'))
             $tab = 'Home';
             include 'header.inc';
             ?>
+            <h1 class="attention">Test. Optimize. Repeat.</h1>
+
             <form name="urlEntry" id="urlEntry" action="/video/docompare.php" method="POST" onsubmit="return ValidateInput(this)">
 
-            <h2 class="cufon-dincond_black">Test a website's performance</h2>
 
             <div id="test_box-container">
                 <ul class="ui-tabs-nav">
-                    <li class="analytical_review"><a href="/">Advanced Testing</a></li>
+                    <li class="analytical_review"><a href="/"><?php echo file_get_contents('./images/icon-advanced-testing.svg'); ?>Advanced Testing</a></li>
                     <?php
-                    if (is_file(__DIR__ . '/../settings/profiles.ini')) {
-                      echo "<li class=\"easy_mode\"><a href=\"/easy.php\">Simple Testing</a></li>";
+                    if (file_exists(__DIR__ . '/../settings/profiles_webvitals.ini') ||
+                            file_exists(__DIR__ . '/../settings/common/profiles_webvitals.ini') ||
+                            file_exists(__DIR__ . '/../settings/server/profiles_webvitals.ini')) {
+                        echo "<li class=\"vitals\"><a href=\"/webvitals\">";
+                        echo file_get_contents('./images/icon-webvitals-testing.svg');
+                        echo "Web Vitals</a></li>";
+                    }
+                    if (file_exists(__DIR__ . '/../settings/profiles.ini') ||
+                        file_exists(__DIR__ . '/../settings/common/profiles.ini') ||
+                        file_exists(__DIR__ . '/../settings/server/profiles.ini')) {
+                        echo "<li class=\"easy_mode\"><a href=\"/easy\">";
+                        echo file_get_contents('./images/icon-simple-testing.svg');
+                        echo "Simple Testing</a></li>";
                     }
                     ?>
-                    <li class="visual_comparison ui-state-default ui-corner-top ui-tabs-selected ui-state-active"><a href="#">Visual Comparison</a></li>
-                    <li class="traceroute"><a href="/traceroute.php">Traceroute</a></li>
+                    <li class="visual_comparison ui-state-default ui-corner-top ui-tabs-selected ui-state-active"><a href="#"><?php echo file_get_contents('./images/icon-visual-comparison.svg'); ?>Visual Comparison</a></li>
+                    <li class="traceroute"><a href="/traceroute.php"><?php echo file_get_contents('./images/icon-traceroute.svg'); ?>Traceroute</a></li>
                 </ul>
                 <div id="visual_comparison" class="test_box">
-
-                    <p>Enter multiple URLs to compare them against each other visually.</p>
-                        <input type="hidden" id="nextid" value="2">
+                    <div class="test-box-lede">
+                      <p class="h3">Enter multiple URLs to compare them against each other visually.</p>
+                      <?php
+                            if (strlen($siteKey)) {
+                            echo "<button data-sitekey=\"$siteKey\" data-callback='onRecaptchaSubmit' class=\"g-recaptcha start_test\">Start Test &#8594;</button>";
+                            } else {
+                            echo '<input type="submit" name="submit" value="Start Test &#8594;" class="start_test">';
+                            }
+                            ?> 
+                    </div>
+                       
+                    <input type="hidden" id="nextid" value="2">
                         <div id="urls">
                             <?php
                             if( $tid )
@@ -72,26 +100,25 @@ if (is_file(__DIR__ . '/../settings/profiles.ini'))
                                     echo '<div id="urldiv0" class="urldiv">';
                                     echo "<input type=\"hidden\" id=\"tid\" name=\"tid\" value=\"$tid\">";
                                     echo "<input type=\"hidden\" id=\"run\" name=\"run\" value=\"$run\">";
-                                    echo "Label: <input id=\"tidlabel\" type=\"text\" name=\"tidlabel\" value=\"$label\" style=\"width:10em\"> ";
-                                    echo "URL: <input id=\"tidurl\" type=\"text\" style=\"width:30em\" value=\"$url\" disabled=\"disabled\"> ";
+                                    echo "<label for=\"tidlabel\">Label</label> <input id=\"tidlabel\" type=\"text\" name=\"tidlabel\" value=\"$label\" > ";
+                                    echo "<label for=\"tidurl\">URL</label> <input id=\"tidurl\" type=\"text\" value=\"$url\" disabled=\"disabled\"> ";
                                     echo "<a href='#' onClick='return RemoveUrl(\"#urldiv0\");'>Remove</a>";
                                     echo "</div>\n";
                                 }
                             }
                             ?>
                             <div id="urldiv1" class="urldiv">
-                                Label: <input id="label1" type="text" name="label[1]" style="width:10em">
-                                URL: <input id="url1" type="text" name="url[1]" style="width:30em" onkeypress="if (event.keyCode == 32) {return false;}" >
+                                <label for="label1">Label</label> <input id="label1" type="text" required name="label[1]">
+                                <label for="url1">URL</label> <input id="url1" type="text" required name="url[1]" onkeypress="if (event.keyCode == 32) {return false;}" >
                                 <a href='#' onClick='return RemoveUrl("#urldiv1");'>Remove</a>
                             </div>
                         </div>
-                        <br>
-                        <button onclick="return AddUrl();">Add</button> another page to the comparison.
-                        <br>
+                        <button class="addBtn" onclick="return AddUrl();">Add Page</button>
                         <br>
                         <br>
                         <br>
-                        <ul>
+                        <br>
+                        <ul class="input_fields">
                         <?php
                         if (isset($profiles) && is_array($profiles) && count($profiles)) {
                           echo '<li>';
@@ -107,29 +134,15 @@ if (is_file(__DIR__ . '/../settings/profiles.ini'))
                               echo "</optgroup>";
                           echo '</select>';
                           echo '</li>';
-                          echo '<br>';
-                          echo '<li>';
-                          echo '<div id="description"></div>';
-                          echo '</li>';
+                          echo '<li id="description"></li>';
                           echo '</ul>';
                         }
                         ?>
-                        <p id="footnote" class="cleared">For each URL, 3 first-view tests will be run from '<?php echo $loc['label']; ?>' and the median run will be used for comparison.
-                        The tests will also be publically available.  If you would like to test with different settings, submit your tests individually from the
+                        <p class="footnote">For each URL, 3 first-view tests will be run from '<?php echo $loc['label']; ?>' and the median run will be used for comparison.
+                        If you would like to test with different settings, submit your tests individually from the
                         <a href="/">main test page</a>.</p>
                     </div>
                 </div>
-
-                <div id="start_test-container">
-                  <?php
-                  if (strlen($siteKey)) {
-                    echo "<p><button data-sitekey=\"$siteKey\" data-callback='onRecaptchaSubmit' class=\"g-recaptcha start_test\"></button></p>";
-                  } else {
-                    echo '<p><input type="submit" name="submit" value="" class="start_test"></p>';
-                  }
-                  ?>
-                </div>
-                <div class="cleared"></div>
 
                 <script type="text/javascript">
                 <?php
@@ -159,7 +172,9 @@ if (is_file(__DIR__ . '/../settings/profiles.ini'))
                 profileChanged();
                 </script>
             </form>
-
+            <?php
+            include(__DIR__ . '/../include/home-subsections.inc');
+            ?>
             <?php include('footer.inc'); ?>
         </div>
 

@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 /******************************************************************************
 *
@@ -37,7 +40,6 @@ if (@strlen($url)) {
 if (!strlen($filename))
     $filename = "pagetest";
 $filename .= ".$id.har";
-header("Content-disposition: attachment; filename=$filename");
 header('Content-type: application/json');
 
 // see if we need to wrap it in a JSONP callback

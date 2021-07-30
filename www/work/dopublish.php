@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 chdir('..');
 include 'common.inc';
 header('Content-type: text/plain');
@@ -28,6 +31,11 @@ if( isset($_FILES['file']) )
       $zip->close();
   }
 
+  // Delete the archive indicator if there is one
+  if (is_file("$path/.archived")) {
+    unlink("$path/.archived");
+  }
+
   // make sure there are no risky files and that nothing is allowed execute permission
   SecureDir($path);
 
@@ -55,6 +63,10 @@ if( isset($_FILES['file']) )
     }
     file_put_contents("$path/testinfo.ini", implode('', $ini));
   }
+
+  // Archive the test
+  if (!GetSetting("lazyArchive"))
+    ArchiveTest($id);
 
   echo $id;
 }

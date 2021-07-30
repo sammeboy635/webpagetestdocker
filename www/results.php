@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 require_once('page_data.inc');
 
@@ -20,13 +23,17 @@ if (array_key_exists('f', $_REQUEST) && $_REQUEST['f'] == 'json') {
             include 'resultBatch.inc';
         } elseif( isset($test['testinfo']['cancelled']) ) {
             include 'testcancelled.inc';
-        } elseif( isset($test['test']['completeTime']) || count($pageData) > 0 ) {
-            if( @$test['test']['type'] == 'traceroute' ) {
+        } elseif( isset($test['test']['completeTime']) || file_exists("$testPath/test.complete") ) {
+            if( isset($test['test']['type']) && @$test['test']['type'] == 'traceroute' ) {
                 include 'resultTraceroute.inc';
-            } elseif( @$test['test']['type'] == 'lighthouse' ) {
+            } elseif( isset($test['test']['type']) && @$test['test']['type'] == 'lighthouse' ) {
                 include 'lighthouse.php';
             } else {
-                include 'result.inc';
+                if (isset($_REQUEST['view']) && $_REQUEST['view'] == 'webvitals') {
+                    include 'vitals.php';
+                } else {
+                    include 'result.inc';
+                }
             }
         } else {
             include 'running.inc';

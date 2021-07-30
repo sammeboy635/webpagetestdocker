@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 require_once __DIR__ . '/FileHandler.php';
 require_once __DIR__ . '/../devtools.inc.php';
@@ -60,8 +63,7 @@ class TestStepResult {
   public static function fromFiles($testInfo, $runNumber, $isCached, $stepNumber, $fileHandler = null) {
     // no support to use FileHandler so far
     $localPaths = new TestPaths($testInfo->getRootDirectory(), $runNumber, $isCached, $stepNumber);
-    $runCompleted = $testInfo->isRunComplete($runNumber);
-    $pageData = loadPageStepData($localPaths, $runCompleted, $testInfo->getInfoArray());
+    $pageData = loadPageStepData($localPaths, $testInfo->getInfoArray());
     return new self($testInfo, $pageData, $runNumber, $isCached, $stepNumber, $fileHandler);
   }
 
@@ -174,23 +176,12 @@ class TestStepResult {
     return empty($identifier) ? ("Step " . $this->step) : $identifier;
   }
 
-  /**
-   * @return string The score
-   */
-  public function getPageSpeedScore() {
-    // TODO: move implementation to this method
-    if ($this->fileHandler->gzFileExists($this->localPaths->pageSpeedFile())) {
-      return GetPageSpeedScore($this->localPaths->pageSpeedFile());
-    }
-    return null;
-  }
-
   public function getVisualProgress() {
     // TODO: move implementation to this method
     if (!$this->fileHandler->dirExists($this->localPaths->videoDir())) {
       return array();
     }
-    return GetVisualProgressForStep($this->localPaths, $this->testInfo->isRunComplete($this->run), $this->getStartOffset());
+    return GetVisualProgressForStep($this->localPaths, $this->getStartOffset());
   }
 
   public function getRequestsWithInfo($addLocationData, $addRawHeaders) {

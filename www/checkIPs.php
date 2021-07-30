@@ -1,13 +1,33 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 require_once('common.inc');
+
+if (!$privateInstall && !$admin) {
+  header("HTTP/1.1 403 Unauthorized");
+  exit;
+}
 error_reporting(E_ALL);
 $days = 0;
 if( isset($_GET["days"]) )
     $days = (int)$_GET["days"];
 
 $whitelist = array();
-$wl = file('./settings/whitelist.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-$blockIps = file('./settings/blockip.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+if (file_exists('./settings/server/whitelist.txt')) {
+  $wl = file('./settings/server/whitelist.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+} elseif (file_exists('./settings/common/whitelist.txt')) {
+  $wl = file('./settings/common/whitelist.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+} else {
+  $wl = file('./settings/whitelist.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+}
+if (file_exists('./settings/server/blockip.txt')) {
+  $blockIps = file('./settings/server/blockip.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+} elseif (file_exists('./settings/common/blockip.txt')) {
+  $blockIps = file('./settings/common/blockip.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+} else {
+  $blockIps = file('./settings/blockip.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+}
 foreach ($wl as &$w) {
   $parts = explode(" ", $w);
   $ip = trim($parts[0]);
@@ -21,7 +41,20 @@ $users = array();
 $keys = array();
 
 // load the API keys
-$keys = parse_ini_file('./settings/keys.ini', true);
+$keys_file = __DIR__ . '/settings/keys.ini';
+if (file_exists(__DIR__ . '/settings/common/keys.ini'))
+  $keys_file = __DIR__ . '/settings/common/keys.ini';
+if (file_exists(__DIR__ . '/settings/server/keys.ini'))
+  $keys_file = __DIR__ . '/settings/server/keys.ini';
+$keys = parse_ini_file($keys_file, true);
+
+$redis = null;
+if ($redis_server = GetSetting('redis_api_keys')) {
+  $redis = new Redis();
+  if (!$redis->connect($redis_server, 6379, 30)) {
+    $redis = null;
+  }
+}
 
 $targetDate = new DateTime('now', new DateTimeZone('GMT'));
 for ($offset = 0; $offset <= $days; $offset++) {
@@ -36,25 +69,27 @@ for ($offset = 0; $offset <= $days; $offset++) {
         $ip = trim($parts[1]);
         if (strlen($ip)) {
           $key = @trim($parts[13]);
-          $count = 1;
-          if (array_key_exists(14, $parts))
-            $count = intval(trim($parts[14]));
-          $count = max(1, $count);
-          if( ($admin) && strlen($key) && $key != $keys['server']['key'] ) {
-            if (!isset($users[$ip]))
-              $users[$ip] = array();
-            if (!in_array($key, $users[$ip]))
-              $users[$ip][] = $key;
-          }
-          if( isset($counts[$ip]) )
-            $counts[$ip] += $count;
-          else
-            $counts[$ip] = $count;
+          if (isset($_REQUEST['api']) || !strlen($key)) {
+            $count = 1;
+            if (array_key_exists(14, $parts))
+              $count = intval(trim($parts[14]));
+            $count = max(1, $count);
+            if( ($admin) && strlen($key) && $key != $keys['server']['key'] ) {
+              if (!isset($users[$ip]))
+                $users[$ip] = array();
+              if (!in_array($key, $users[$ip]))
+                $users[$ip][] = $key;
+            }
+            if( isset($counts[$ip]) )
+              $counts[$ip] += $count;
+            else
+              $counts[$ip] = $count;
 
-          if( isset($dayCount[$ip]) )
-            $dayCount[$ip] += $count;
-          else
-            $dayCount[$ip] = $count;
+            if( isset($dayCount[$ip]) )
+              $dayCount[$ip] += $count;
+            else
+              $dayCount[$ip] = $count;
+          }
         }
       }
     }
@@ -97,17 +132,9 @@ foreach($counts as $ip => $count) {
       $names = ' (';
       $separator = '';
       foreach ($users[$ip] as $key) {
-        // see if it was an auto-provisioned key
-        if (!isset($keys[$key]) && preg_match('/^(?P<prefix>[0-9A-Za-z]+)\.(?P<key>[0-9A-Za-z]+)$/', $key, $matches)) {
-          $prefix = $matches['prefix'];
-          if (is_file(__DIR__ . "/dat/{$prefix}_api_keys.db")) {
-            $db = new SQLite3(__DIR__ . "/dat/{$prefix}_api_keys.db");
-            $k = $db->escapeString($matches['key']);
-            $info = $db->querySingle("SELECT email,key_limit FROM keys WHERE key='$k'", true);
-            $db->close();
-            if (isset($info) && is_array($info) && isset($info['key_limit']) && isset($info['email']))
-              $keys[$key] = array('contact' => $info['email'] . "[$prefix]", 'limit' => $info['key_limit']);
-          }
+        if (!isset($keys[$key])) {
+          // See if we have API key info in redis
+          $keys[$key] = GetKeyInfo($key);
         }
         if (isset($keys[$key]) && isset($keys[$key]['contact'])) {
           $names .= $separator;
@@ -144,5 +171,25 @@ function IPBlocked($ip) {
     }
   }
   return $blocked;
+}
+
+function GetKeyInfo($key) {
+  global $redis;
+  $info = array();
+  $account = CacheFetch("APIkey_$key");
+  if (!isset($account)) {
+    $response = $redis->get("API_$key");
+    if ($response && strlen($response)) {
+      $account = json_decode($response, true);
+      if (isset($account) && is_array($account)) {
+        CacheStore("APIkey_$key", $account, 60);
+      }
+    }
+  }
+  if (isset($account) && is_array($account) && isset($account['email'])) {
+    $info['contact'] = $account['email'];
+  }
+
+  return $info;
 }
 ?>

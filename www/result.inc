@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 require_once __DIR__ . '/optimization_detail.inc.php';
 require_once __DIR__ . '/breakdown.inc';
 require_once __DIR__ . '/testStatus.inc';
@@ -14,7 +17,7 @@ $status = GetTestStatus($id, false);
 if( $status['statusCode'] < 200 )
     $testComplete = false;
 $headless = false;
-if (array_key_exists('headless', $settings) && $settings['headless']) {
+if (GetSetting('headless')) {
     $headless = true;
 }
 
@@ -25,7 +28,7 @@ $page_keywords = array('Results','WebPageTest','Website Speed Test','Page Speed'
 $page_description = "Website performance test result$testLabel.";
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest Test Result<?php echo $testLabel; ?></title>
         <style type="text/css">
@@ -36,14 +39,6 @@ $page_description = "Website performance test result$testLabel.";
                 height: 2em;
             }
         </style>
-        <script language="JavaScript">
-            <?php
-                $wpt_host = trim($_SERVER['HTTP_HOST']);
-                echo "var wpt_host='$wpt_host';\n";
-            ?>
-            if( window.location.host.length && wpt_host.length && window.location.host != wpt_host )
-                window.location = document.location.protocol + '//' + wpt_host + window.location.pathname;
-        </script>
         <?php if( !$testComplete ) {
                 $autoRefresh = true;
         ?>
@@ -53,8 +48,7 @@ $page_description = "Website performance test result$testLabel.";
         <?php } ?>
         <?php $gaTemplate = 'Test Result'; include ('head.inc'); ?>
     </head>
-    <body>
-        <div class="page">
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
             <?php
             $tab = 'Test Result';
             $subtab = 'Summary';
@@ -68,7 +62,7 @@ $page_description = "Website performance test result$testLabel.";
                 <p class="left">
                 <br>
                 <?php
-                    if ($settings['nolinks']) {
+                    if (GetSetting('nolinks')) {
                         echo "URL: $url<br>\n";
                     } else {
                         echo "URL: <a rel=\"nofollow\" href=\"$url\">$url</a><br>\n";
@@ -99,7 +93,7 @@ $page_description = "Website performance test result$testLabel.";
                         && (!isset($test['testinfo']['type']) || !strlen($test['testinfo']['type'])) )
                     {
                         $siteKey = GetSetting("recaptcha_site_key", "");
-                        if (!isset($uid) && !isset($user) && !isset($this_user) && strlen($siteKey)) {
+                        if (!isset($uid) && !isset($user) && !isset($USER_EMAIL) && strlen($siteKey)) {
                           echo "<script src=\"https://www.google.com/recaptcha/api.js\" async defer></script>\n";
                           ?>
                           <script>
@@ -110,12 +104,11 @@ $page_description = "Website performance test result$testLabel.";
                           <?php
                         }
                         // load the secret key (if there is one)
-                        $secret = '';
-                        $keys = parse_ini_file('./settings/keys.ini', true);
-                        if( $keys && isset($keys['server']) && isset($keys['server']['secret']) )
-                          $secret = trim($keys['server']['secret']);
+                        $secret = GetServerSecret();
+                        if (!isset($secret))
+                            $secret = '';
 
-                        echo '<form name="urlEntry" id="urlEntry" action="/runtest.php" method="POST" enctype="multipart/form-data">';
+                        echo "<form name='urlEntry' id='urlEntry' action='/runtest.php?test=$id' method='POST' enctype='multipart/form-data'>";
                         echo "\n<input type=\"hidden\" name=\"resubmit\" value=\"$id\">\n";
                         echo '<input type="hidden" name="vo" value="' . htmlspecialchars($owner) . "\">\n";
                         if( strlen($secret) ){
@@ -144,31 +137,16 @@ $page_description = "Website performance test result$testLabel.";
                     $rvMedian = $testResults->getMedianRunNumber($median_metric, true);
 
                     echo "<a href='/jsonResult.php?test=$id&pretty=1'>View JSON result</a><br>";
-
-                    // create friendlier (unique) names for the file URLs
-                    $fileUrl = GetFileUrl($url);
-                    if( FRIENDLY_URLS )
-                    {
-                        echo "<a href=\"/result/$id/{$id}_{$fileUrl}_page_data.csv\">Raw page data</a> - ";
-                        echo "<a href=\"/result/$id/{$id}_{$fileUrl}_requests.csv\">Raw object data</a>";
-                    }
-                    else
-                    {
-                        echo "<a href=\"/csv.php?test=$id\">Raw page data</a> - ";
-                        echo "<a href=\"/csv.php?test=$id&requests=1\">Raw object data</a>";
-                    }
-                    echo '<br><a href="/export.php?bodies=1&pretty=1&test=' . $id . '">Export HTTP Archive (.har)</a>';
-		                if( is_dir('./google') && array_key_exists('enable_google_csi', $settings) && $settings['enable_google_csi'] )
-			                echo '<br><a href="/google/view_csi.php?test=' . $id . '">View CSI data</a>';
+                    echo '<a href="/export.php?bodies=1&pretty=1&test=' . $id . '">Export HTTP Archive (.har)</a>';
                     if (is_file("$testPath/test.log"))
                         echo "<br><a href=\"/viewlog.php?test=$id\">View Test Log</a>";
                     if (is_file("$testPath/lighthouse.log.gz"))
                         echo " - <a href=\"/viewlog.php?test=$id&lighthouse=1\">Lighthouse Test Log</a>";
-                    if( array_key_exists('publishTo', $settings) && $settings['publishTo'] )
-                        echo "<br><a href=\"/publish.php?test=$id\">Publish to {$settings['publishTo']}</a>";
+                    $publish = GetSetting('publishTo');
+                    if( $publish && GetSetting('host') != 'www.webpagetest.org' )
+                        echo "<br><a href=\"/publish.php?test=$id\">Publish to $publish</a>";
                 ?>
             </div>
-            <div class="cleared"></div>
             <div id="average">
                 <?php
                 $is_test_error = $testInfo->isTestError();
@@ -195,57 +173,6 @@ $page_description = "Website performance test result$testLabel.";
                     ?>
                     <br>
                 <?php
-                    if( is_dir('./google') && isset($test['testinfo']['extract_csi']) && $fvMedian && count($pageData) > 1 )
-		            {
-			        require_once('google/google_lib.inc');
-			        // Draw the table and print the first-view details.
-		    	        $fv_params = ParseCsiInfo($id, $testPath, $fvMedian, false, true);
-		        ?>
-		    <h2>Csi Metrics (Median Run)</h2>
-                    <table id="tableCustomMetrics" class="pretty" align="center" border="1" cellpadding="10" cellspacing="0">
-                    <tr>
-			<th align="center" class="empty" valign="middle" style="border:1px white solid;"></th>
-		<?php
-		    	foreach ( $test['testinfo']['extract_csi'] as $csi_param )
-                       	    echo '<th align="center" class="border" valign="middle" colspan="1">' . $csi_param . '</th>';
-		        echo '</tr><tr>';
-		        echo '<td align="left" class="even" valign="middle">First View';
-                        echo ' (<a href="#run' . $fvMedian . '">Run ' . $fvMedian . '</a>)';
-			foreach ( $test['testinfo']['extract_csi'] as $csi_param )
-			{
-			    if( array_key_exists($csi_param, $fv_params) )
-			    {
-                                echo '<td class="even" valign="middle">' . $fv_params[$csi_param] . '</td>';
-			    }
-			    else
-			    {
-				echo '<td class="even" valign="middle"></td>';
-			    }
-			}
-			// Print the repeat view row.
-			if( $rvMedian )
-			{
-			    echo '</tr><tr>';
-			    $rv_params = ParseCsiInfo($id, $testPath, $rvMedian, true, true);
-                            echo '<td align="left" class="even" valign="middle">Repeat View';
-                            echo ' (<a href="#run' . $rvMedian . '">Run ' . $rvMedian . '</a>)';
-                            foreach ( $test['testinfo']['extract_csi'] as $csi_param )
-                            {
-                                if( array_key_exists($csi_param, $rv_params) )
-                                {
-                                    echo '<td class="even" valign="middle">' . $rv_params[$csi_param] . '</td>';
-                                }
-                                else
-                                {
-                                    echo '<td class="even" valign="middle"></td>';
-                                }
-                            }
-			}
-			echo '</tr>';
-		?>
-		    </table><br>
-		<?php
-		    } // csi
                 } // fvMedian
                 if (!$fvMedian || $is_test_error) {
                     $error = 'The test completed but there were no successful results.';
@@ -274,24 +201,26 @@ $page_description = "Website performance test result$testLabel.";
                 }
                 ?>
             </div>
+            <?php
+            if (isset($fvRunResults)) {
+              require_once(__DIR__ . '/include/CrUX.php');
+              InsertCruxHTML($fvRunResults, $rvRunResults, '');
+            }
+            ?>
             <script type="text/javascript">
               markUserTime('aft.Result Data Table');
             </script>
             <?php } ?>
             <div id="tables" style="text-align:left;">
             <?php
-            if ($testResults->countRuns() > 1)
-                echo '<h3 style="text-align:center;">Test Results</h3>';
-            $tcpDumpView = !empty($settings['tcpdump_view']) ? $settings['tcpdump_view'] : null;
+            $tcpDumpView = GetSetting('tcpdump_view') ? GetSetting('tcpdump_view') : null;
             $resultTables = new TestResultsHtmlTables($testInfo, $testResults, $testComplete, $median_metric, $tcpDumpView);
             echo $resultTables->create();
             ?>
             </div>
             </div>
 
-		    <br>
-            <?php if (file_exists('./ads/results_bottom.inc')) include('./ads/results_bottom.inc'); ?>
-		    <br>
+              </div>
 
             <?php include('footer.inc'); ?>
         </div>

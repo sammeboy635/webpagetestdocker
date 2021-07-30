@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 
 require_once __DIR__ . '/TestStepResult.php';
 
@@ -173,38 +176,6 @@ class TestRunResults {
   }
 
   /**
-   * @return float|null The average page speed score of all steps (if set)
-   */
-  public function averagePageSpeedScore() {
-    $numScores = 0;
-    $scoreSum = 0.0;
-    foreach ($this->stepResults as $step) {
-      $score = $step->getPageSpeedScore();
-      if ($score) {
-        $numScores += 1;
-        $scoreSum += intval($score);
-      }
-    }
-    if ($numScores == 0) {
-      return null;
-    }
-    return ceil($scoreSum / $numScores);
-  }
-
-  /**
-   * @return null|string The first valid pageSpeedVersion of a step, or null
-   */
-  public function getPageSpeedVersion() {
-    foreach ($this->stepResults as $step) {
-      $version = $step->getMetric("pageSpeedVersion");
-      if ($version) {
-        return $version;
-      }
-    }
-    return null;
-  }
-
-  /**
    * @param string[] $keywords Keywords to use for the check
    * @return bool True if the checked site is an adult site, false otherwise
    */
@@ -274,6 +245,18 @@ class TestRunResults {
   public function isOptimizationChecked() {
     foreach ($this->stepResults as $stepResult) {
       if ($stepResult->getMetric("optimization_checked")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * @return bool True if any step is  optimization-checked, false otherwise
+   */
+  public function hasWebVitals() {
+    foreach ($this->stepResults as $stepResult) {
+      if ($stepResult->getMetric("chromeUserTiming.LargestContentfulPaint")) {
         return true;
       }
     }

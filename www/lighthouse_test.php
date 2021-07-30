@@ -1,18 +1,17 @@
 <?php 
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 
 $headless = false;
-if (array_key_exists('headless', $settings) && $settings['headless']) {
+if (GetSetting('headless')) {
     $headless = true;
 }
 // load the secret key (if there is one)
-$secret = '';
-if (is_file('./settings/keys.ini')) {
-    $keys = parse_ini_file('./settings/keys.ini', true);
-    if (is_array($keys) && array_key_exists('server', $keys) && array_key_exists('secret', $keys['server'])) {
-      $secret = trim($keys['server']['secret']);
-    }
-}
+$secret = GetServerSecret();
+if (!isset($secret))
+    $secret = '';
 $url = '';
 if (isset($req_url)) {
   $url = htmlspecialchars($req_url);
@@ -20,10 +19,16 @@ if (isset($req_url)) {
 if (!strlen($url)) {
   $url = 'Enter a Website URL';
 }
-$lighthouse = parse_ini_file('./settings/lighthouse.ini', true);
+if (file_exists('./settings/server/lighthouse.ini')) {
+  $lighthouse = parse_ini_file('./settings/server/lighthouse.ini', true);  
+} elseif (file_exists('./settings/common/lighthouse.ini')) {
+  $lighthouse = parse_ini_file('./settings/common/lighthouse.ini', true);  
+} else {
+  $lighthouse = parse_ini_file('./settings/lighthouse.ini', true);
+}
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPagetest - Lighthouse Test</title>
         <?php $gaTemplate = 'Main'; include ('head.inc'); ?>
@@ -31,11 +36,10 @@ $lighthouse = parse_ini_file('./settings/lighthouse.ini', true);
         #description { min-height: 2em; padding-left: 170px; width:380px;}
         </style>
     </head>
-    <body>
-        <div class="page">
+    <body class="home<?php if ($COMPACT_MODE) {echo ' compact';} ?>">
             <?php
             $siteKey = GetSetting("recaptcha_site_key", "");
-            if (!isset($uid) && !isset($user) && !isset($this_user) && strlen($siteKey)) {
+            if (!isset($uid) && !isset($user) && !isset($USER_EMAIL) && strlen($siteKey)) {
               echo "<script src=\"https://www.google.com/recaptcha/api.js\" async defer></script>\n";
               ?>
               <script>
@@ -81,7 +85,14 @@ $lighthouse = parse_ini_file('./settings/lighthouse.ini', true);
             <div id="test_box-container">
                 <div id="analytical-review" class="test_box">
                     <ul class="input_fields">
-                        <li><input type="text" name="url" id="url" value="<?php echo $url; ?>" class="text large" onfocus="if (this.value == this.defaultValue) {this.value = '';}" onblur="if (this.value == '') {this.value = this.defaultValue;}" onkeypress="if (event.keyCode == 32) {return false;}"></li>
+                        <li><input type="text" name="url" id="url" value="<?php echo $url; ?>" class="text large" onfocus="if (this.value == this.defaultValue) {this.value = '';}" onblur="if (this.value == '') {this.value = this.defaultValue;}" onkeypress="if (event.keyCode == 32) {return false;}">
+                        <?php
+                if (strlen($siteKey)) {
+                  echo "<button data-sitekey=\"$siteKey\" data-callback='onRecaptchaSubmit' class=\"g-recaptcha start_test\">Start Test &#8594;</button>";
+                } else {
+                  echo '<input type="submit" name="submit" value="Start Test &#8594;" class="start_test">';
+                }
+                ?></li>
                         <li>
                             <label for="location">Test Location:</label>
                             <select name="location" id="location" onchange="profileChanged()">
@@ -101,20 +112,11 @@ $lighthouse = parse_ini_file('./settings/lighthouse.ini', true);
                         </li>
                     </ul>
                 </div>
+
             </div>
 
-            <div id="start_test-container">
-                <?php
-                if (strlen($siteKey)) {
-                  echo "<p><button data-sitekey=\"$siteKey\" data-callback='onRecaptchaSubmit' class=\"g-recaptcha start_test\"></button></p>";
-                } else {
-                  echo '<p><input type="submit" name="submit" value="" class="start_test"></p>';
-                }
-                ?>
-            </div>
-            <div class="cleared"></div>
-            </form>
             
+            </form>
             <?php
             } // $headless
             ?>

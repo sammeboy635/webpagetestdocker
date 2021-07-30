@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 require_once('page_data.inc');
 $page_keywords = array('image','comparison','WebPageTest','Website Speed Test');
@@ -24,12 +27,12 @@ if( $refRun && $cmpRun )
 }
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
     <head>
         <title>WebPageTest - Screenshot Diff</title>
         <?php include ('head.inc'); ?>
     </head>
-    <body>
+    <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
         <div class="page">
             <?php
             $tab = 'Test Result';

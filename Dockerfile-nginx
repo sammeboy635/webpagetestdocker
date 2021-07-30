@@ -4,8 +4,8 @@ LABEL maintainer="Wolfgang Schiffels<wolfgang.schiffels@baqend.com>"
 RUN rm /etc/nginx/conf.d/default.conf \
     && mkdir -p /var/www/ \
     && mkdir /etc/nginx/sites-enabled \
-    && chown -R nginx.nginx /var/cache/nginx/ /var/www/ /run \
-    && chown -R nginx.nginx /var/www/
+    && chown -R nginx:nginx /var/cache/nginx/ /var/www/ /run \
+    && chown -R nginx:nginx /var/www/
 
 COPY docker/server/config/nginx.conf /etc/nginx/nginx.conf
 COPY docker/server/config/default /etc/nginx/sites-enabled
@@ -20,5 +20,4 @@ RUN chown -R nginx /var/www/webpagetest/settings/
 
 USER nginx
 EXPOSE 80
-#CMD ["/bin/sh",  "-c",  "envsubst < /var/www/webpagetest/settings/settings.tpl > /var/www/webpagetest/settings/settings.ini && exec nginx -g 'daemon off;'"]
 CMD ["nginx", "-g", "daemon off;"]

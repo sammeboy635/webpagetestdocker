@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 if(extension_loaded('newrelic')) {
     newrelic_add_custom_tracer('tbnDrawWaterfall');
     newrelic_add_custom_tracer('tbnDrawChecklist');
@@ -58,6 +61,7 @@ else
         {
             header('Last-Modified: ' . gmdate('r'));
             header('Expires: '.gmdate('r', time() + 31536000));
+            header('Cache-Control: public, max-age=31536000', true);
             GenerateThumbnail($img, $type);
             SendImage($img, $type);
         }
@@ -75,13 +79,43 @@ function tbnLoadImage($testPath, $file, $type, &$img)
         $parts = pathinfo($file);
         $type = $parts['extension'];
     }
+    $width = null;
+    $height = null;
     if( is_file("$testPath/$file") ) {
+        list($width, $height) = getimagesize("$testPath/$file");
         if( !strcasecmp( $type, 'jpg') )
             $img = @imagecreatefromjpeg("$testPath/$file");
         elseif( !strcasecmp( $type, 'gif') )
             $img = @imagecreatefromgif("$testPath/$file");
         else
             $img = @imagecreatefrompng("$testPath/$file");
+    }
+
+    // Overlay rectangle highlights on the image if requested
+    if (isset($_REQUEST['rects']) && isset($width) && isset($height) && $width > 0 && $height > 0) {
+        $groups = explode('|', $_REQUEST['rects']);
+        foreach ($groups as $group) {
+            $parts = explode('-', $group);
+            if (count($parts) == 2) {
+                $color = $parts[0];
+                if (strlen($color) == 8) {
+                    $hex = array($color[0] . $color[1], $color[2] . $color[3], $color[4] . $color[5], $color[6] . $color[7]);
+                    $rgba = array_map('hexdec', $hex);
+                    $fill_color = imagecolorallocatealpha($img, $rgba[0], $rgba[1], $rgba[2], $rgba[3] / 2);
+                    $rects = explode(',', $parts[1]);
+                    foreach ($rects as $rect) {
+                        $parts = explode('.', $rect);
+                        if (count($parts) == 4) {
+                            $x1 = min(($parts[0] * $width) / 1000, $width);
+                            $x2 = min($x1 + ($parts[2] * $width) / 1000, $width);
+                            $y1 = min(($parts[1] * $height) / 1000, $height);
+                            $y2 = min($y1 + ($parts[3] * $height) / 1000, $height);
+                            imagefilledrectangle($img, $x1, $y1, $x2, $y2, $fill_color);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

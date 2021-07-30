@@ -1,4 +1,7 @@
 <?php
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 
 // see if we are processing an import or presenting the UI
@@ -204,7 +207,7 @@ if (array_key_exists('tests', $_REQUEST)) {
   $page_description = "Import Chrome Dev Tools.";
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en-us">
   <head>
     <title>WebPageTest - Import Chrome Dev Tools</title>
     <meta http-equiv="charset" content="iso-8859-1">
@@ -215,7 +218,7 @@ if (array_key_exists('tests', $_REQUEST)) {
     input[type="file"] {color:#FFF;}
     </style>
   </head>
-  <body>
+  <body <?php if ($COMPACT_MODE) {echo 'class="compact"';} ?>>
     <div class="page">
       <?php
       $tab = 'Import';
@@ -274,7 +277,12 @@ if (array_key_exists('tests', $_REQUEST)) {
                 <label for="test">Existing Test<br><small>(Add runs to an existing test)</small></label>
               </li>
               <?php
-              if (is_file('./settings/keys.ini')) {
+              $keys_file = __DIR__ . '/settings/keys.ini';
+              if (file_exists(__DIR__ . '/settings/common/keys.ini'))
+                $keys_file = __DIR__ . '/settings/common/keys.ini';
+              if (file_exists(__DIR__ . '/settings/server/keys.ini'))
+                $keys_file = __DIR__ . '/settings/server/keys.ini';
+              if (is_file($keys_file)) {
                 $key = '';
                 if (array_key_exists('k', $_REQUEST))
                   $key = htmlspecialchars($_REQUEST['k']);
@@ -310,10 +318,15 @@ if (array_key_exists('tests', $_REQUEST)) {
 
 function ValidateKey() {
   $valid = false;
-  if (!is_file('./settings/keys.ini')) {
+  $keys_file = __DIR__ . '/settings/keys.ini';
+  if (file_exists(__DIR__ . '/settings/common/keys.ini'))
+    $keys_file = __DIR__ . '/settings/common/keys.ini';
+  if (file_exists(__DIR__ . '/settings/server/keys.ini'))
+    $keys_file = __DIR__ . '/settings/server/keys.ini';
+  if (!is_file($keys_file)) {
     $valid = true;
   } elseif (array_key_exists('k', $_REQUEST) && strlen($_REQUEST['k'])) {
-    $keys = parse_ini_file('./settings/keys.ini', true);
+    $keys = parse_ini_file($keys_file, true);
     if ($keys && is_array($keys) && array_key_exists($_REQUEST['k'], $keys))
       $valid = true;
   }

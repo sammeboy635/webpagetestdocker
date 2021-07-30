@@ -1,8 +1,15 @@
 <?php
-
+// Copyright 2020 Catchpoint Systems Inc.
+// Use of this source code is governed by the Polyform Shield 1.0.0 license that can be
+// found in the LICENSE.md file.
 include 'common.inc';
 if (isset($_REQUEST['k'])) {
-  $keys = parse_ini_file(__DIR__ . '/settings/keys.ini', true);
+  $keys_file = __DIR__ . '/settings/keys.ini';
+  if (file_exists(__DIR__ . '/settings/common/keys.ini'))
+    $keys_file = __DIR__ . '/settings/common/keys.ini';
+  if (file_exists(__DIR__ . '/settings/server/keys.ini'))
+    $keys_file = __DIR__ . '/settings/server/keys.ini';
+  $keys = parse_ini_file($keys_file, true);
   if (isset($keys['server']['key']) && $_REQUEST['k'] == $keys['server']['key']) {
     $admin = true;
   }
@@ -36,7 +43,14 @@ if( array_key_exists('f', $_REQUEST) && $_REQUEST['f'] == 'json' ) {
       if ($location['elapsed'] < 30)
         $error = ' success';
     }
-    echo "<tr id=\"$name\"><th class=\"header$error\" colspan=\"16\">" . htmlspecialchars($name) . "$elapsed</th></tr>\n";
+    echo "<tr id=\"$name\"><th class=\"header$error\" colspan=\"16\">" . htmlspecialchars($name) . "$elapsed";
+    if (isset($location['label'])) {
+      echo ' : ' . htmlspecialchars($location['label']);
+      if (isset($location['node'])) {
+        echo htmlspecialchars(" ({$location['node']})");
+      }
+    }
+    echo "</th></tr>\n";
     if (array_key_exists('testers', $location)) {
       echo "<tr><th class=\"tester\">Tester</th><th>Busy?</th><th>Last Check (minutes)</th><th>Last Work (minutes)</th><th>Version</th><th>PC</th><th>EC2 Instance</th><th>CPU Utilization</th><th>Error Rate</th><th>Free Disk (GB)</th><th>uptime (minutes)</th><th>Screen Size</th>";
       echo "<th>IP</th><th>DNS Server(s)</th>";
@@ -168,6 +182,15 @@ function GetAllTesters($include_sensitive = true) {
         $locations[$loc[$group[$j]]['location']] = GetRemoteTesters($loc[$group[$j]]['relayServer'], $loc[$group[$j]]['relayLocation']);
       } else {
         $locations[$loc[$group[$j]]['location']] = GetTesters($loc[$group[$j]]['location'], false, $include_sensitive);
+        if (isset($loc[$group[$j]]['label'])) {
+          $label = $loc[$group[$j]]['label'];
+          $index = strpos($label, ' - ');
+          if ($index > 0)
+            $label = substr($label, 0, $index);
+          $locations[$loc[$group[$j]]['location']]['label'] = $label;
+        }
+        if (isset($loc[$group[$j]]['scheduler_node']))
+          $locations[$loc[$group[$j]]['location']]['node'] = $loc[$group[$j]]['scheduler_node'];
       }
 
       $j++;
