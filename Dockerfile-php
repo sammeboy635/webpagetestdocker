@@ -122,7 +122,7 @@ COPY docker/server/config/locations.ini /var/www/webpagetest/settings/locations.
 COPY docker/server/config/connectivity.ini /var/www/webpagetest/settings/connectivity.ini
 #COPY docker/server/config/settings.ini /var/www/webpagetest/settings/settings.ini
 COPY docker/server/config/mobile_devices.ini /var/www/webpagetest/settings/mobile_devices.ini
-COPY docker/server/config/video.ini /var/www/webpagetest/video/settings/video.ini
+COPY docker/server/config/video.ini /var/www/webpagetest/settings/video.ini
 
 COPY docker/server/scripts/ /scripts/
 
@@ -133,7 +133,6 @@ RUN chmod 755 /scripts/* \
     && mkdir -p /var/www/webpagetest/work/video \
     && chown -R nobody.nobody /var/www/webpagetest/work/video \
     && chown -R nobody.nobody /var/www/webpagetest/settings/ \
-    && chown -R nobody.nobody /var/www/webpagetest/video/settings/ \
     && crontab /etc/crontab
 
 USER nobody
