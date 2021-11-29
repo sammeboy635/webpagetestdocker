@@ -1269,7 +1269,7 @@ function ValidateKey(&$test, &$error, $key = null)
             $test['location'] = $keys[$key]['default location'];
         }
         $api_priority = intval(GetSetting('api_priority', 5));
-        $test['priority'] = $api_priority;
+        // $test['priority'] = $api_priority; -- fix hardcoded priority
         if (isset($keys[$key]['priority']))
             $test['priority'] = intval($keys[$key]['priority']);
         if (isset($keys[$key]['max-priority']))
