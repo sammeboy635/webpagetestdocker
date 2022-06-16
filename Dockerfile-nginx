@@ -1,6 +1,4 @@
 FROM nginx:alpine
-LABEL maintainer="Wolfgang Schiffels<wolfgang.schiffels@baqend.com>"
-
 RUN rm /etc/nginx/conf.d/default.conf \
     && mkdir -p /var/www/ \
     && mkdir /etc/nginx/sites-enabled \

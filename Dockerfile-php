@@ -78,7 +78,6 @@ RUN ./configure \
 RUN rm -rf /var/cache/apk/* /tmp/*
 
 FROM php:7.4-fpm-alpine
-LABEL maintainer="Wolfgang Schiffels<wolfgang.schiffels@baqend.com>"
 ENV PATH=/opt/ffmpeg/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 

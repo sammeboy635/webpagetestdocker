@@ -4,8 +4,6 @@ version: '3.6'
 services:
 
   web:
-    # image: baqend/webpagetest-nginx:upgrade-test-3
-    #image: baqend/webpagetest-nginx:2021-06-28
     build: 
       context: .
       dockerfile: Dockerfile-nginx
@@ -29,8 +27,6 @@ services:
         target: /var/www/webpagetest/settings/keys.ini
 
   php:
-    #image: baqend/webpagetest-php:2021-07-21
-    #image: baqend/webpagetest-php:2021-06-28
     build: 
       context: .
       dockerfile: Dockerfile-php
