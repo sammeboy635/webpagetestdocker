@@ -4,8 +4,11 @@ version: '3.6'
 services:
 
   web:
-    image: baqend/webpagetest-nginx:upgrade-test-3
+    # image: baqend/webpagetest-nginx:upgrade-test-3
     #image: baqend/webpagetest-nginx:2021-06-28
+    build: 
+      context: .
+      dockerfile: Dockerfile-nginx
     ports:
       - target: 8080
         published: 8088
@@ -26,8 +29,11 @@ services:
         target: /var/www/webpagetest/settings/keys.ini
 
   php:
-    image: baqend/webpagetest-php:2021-07-21
+    #image: baqend/webpagetest-php:2021-07-21
     #image: baqend/webpagetest-php:2021-06-28
+    build: 
+      context: .
+      dockerfile: Dockerfile-php
     volumes:
       - upgrade-results:/var/www/webpagetest/results
       - upgrade-work:/var/www/webpagetest/work
@@ -46,12 +52,12 @@ networks:
   default:
 
 secrets:
-  wpt-key:
-    external: true
+  # wpt-key:
+  #   external: true
   wpt_settings_ini:
-    external: true
+    file: ./settings.ini
   wpt_keys_ini:
-    external: true
+    file: ./keys.ini
 
 volumes:
   upgrade-results:

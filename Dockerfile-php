@@ -82,13 +82,13 @@ LABEL maintainer="Wolfgang Schiffels<wolfgang.schiffels@baqend.com>"
 ENV PATH=/opt/ffmpeg/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 
-RUN apk add --no-cache supervisor beanstalkd zip libzip python2 libtheora rtmpdump x264-dev x265-dev \
+RUN apk add --no-cache supervisor beanstalkd zip libzip python3 libtheora rtmpdump x264-dev x265-dev \
     libpng libjpeg imagemagick imagemagick-libs imagemagick-dev libass librtmp libvpx libwebp lame pcre \
     libogg libvorbis exiftool libjpeg-turbo-utils freetype zlib x264-libs x265 libzip opus bash libgomp \
     && apk add --no-cache --virtual .build-deps zlib-dev libpng-dev jpeg-dev freetype-dev \
     libzip-dev curl-dev autoconf gcc libc-dev make \
-    && python -m ensurepip \
-    && pip2 install ffmpeg \
+    && python3 -m ensurepip \
+    && pip3 install ffmpeg \
     && mkdir -p /var/www/ \
     && mkdir -p /scripts \
     && docker-php-ext-configure gd --with-freetype=/usr/include/ --with-jpeg=/usr/include/ \
