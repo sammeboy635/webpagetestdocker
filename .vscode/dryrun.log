@@ -1,0 +1,10 @@
+make: Entering directory '/home/tech99/Documents/webpagetest'
+ 
+docker build --rm -t "baqend/webpagetest-php:2022-06-16" -f Dockerfile-php .
+ 
+docker build --rm -t "baqend/webpagetest-nginx:2022-06-16" -f Dockerfile-nginx .
+ 
+docker push baqend/webpagetest-php:2022-06-16
+docker push baqend/webpagetest-nginx:2022-06-16
+make: Leaving directory '/home/tech99/Documents/webpagetest'
+ 

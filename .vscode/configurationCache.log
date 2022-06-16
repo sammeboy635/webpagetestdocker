@@ -1,0 +1,1 @@
+{"buildTargets":["alpine-nginx","alpine-php","alpine-push","apache","apache-push","build-alpine","build-apache","default"],"launchTargets":[],"customConfigurationProvider":{"workspaceBrowse":{"browsePath":[],"compilerArgs":[]},"fileIndex":[]}}

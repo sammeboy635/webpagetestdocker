@@ -8,7 +8,7 @@ services:
     #image: baqend/webpagetest-nginx:2021-06-28
     ports:
       - target: 8080
-        published: 80
+        published: 8088
         protocol: tcp
         mode: host
     volumes:
