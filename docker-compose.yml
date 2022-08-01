@@ -1,20 +1,18 @@
 ---
 version: '3.6'
-
+# READ THE DOCKER/LOCAL/README FOR MORE INFORMATION
 services:
 
   web:
     build: 
       context: .
-      dockerfile: Dockerfile-nginx
+      dockerfile: docker/local/Dockerfile-nginx
+    privileged: true
     ports:
-      - target: 8080
-        published: 8088
-        protocol: tcp
-        mode: host
+      - target: 80
+        published: 80
     volumes:
       - upgrade-results:/var/www/webpagetest/results:ro
-      - upgrade-work:/var/www/webpagetest/work:ro
     deploy:
       replicas: 1
       placement:
@@ -25,14 +23,21 @@ services:
         target: /var/www/webpagetest/settings/settings.ini
       - source: wpt_keys_ini
         target: /var/www/webpagetest/settings/keys.ini
+      # - source: wpt_locations_ini
+      #   target: /var/www/webpagetest/settings/locations.ini
 
   php:
     build: 
       context: .
-      dockerfile: Dockerfile-php
+      dockerfile: docker/local/Dockerfile-php
+    privileged: true
+    ports:
+      - target: 4000
+        published: 4001
+        protocol: tcp
+        mode: internal
     volumes:
       - upgrade-results:/var/www/webpagetest/results
-      - upgrade-work:/var/www/webpagetest/work
     deploy:
       replicas: 1
       placement:
@@ -43,17 +48,19 @@ services:
         target: /var/www/webpagetest/settings/settings.ini
       - source: wpt_keys_ini
         target: /var/www/webpagetest/settings/keys.ini
+      - source: wpt_locations_ini
+        target: /var/www/webpagetest/settings/locations.ini
 
-networks:
-  default:
 
 secrets:
   # wpt-key:
   #   external: true
   wpt_settings_ini:
-    file: ./settings.ini
+    file: ./docker/local/configs/settings.ini
   wpt_keys_ini:
-    file: ./keys.ini
+    file: ./docker/local/configs/keys.ini
+  wpt_locations_ini:
+    file: ./docker/local/configs/locations.ini
 
 volumes:
   upgrade-results:
