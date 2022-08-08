@@ -11,8 +11,6 @@ services:
     ports:
       - target: 80
         published: 80
-    volumes:
-      - upgrade-results:/var/www/webpagetest/results:ro
     deploy:
       replicas: 1
       placement:
@@ -31,13 +29,16 @@ services:
       context: .
       dockerfile: docker/local/Dockerfile-php
     privileged: true
-    ports:
-      - target: 4000
-        published: 4001
-        protocol: tcp
-        mode: internal
+    expose:
+      - 9000
+    # ports:
+    #   - target: 4000
+    #     published: 4001
+    #     protocol: tcp
+    #     mode: internal
     volumes:
-      - upgrade-results:/var/www/webpagetest/results
+      - ./docker/local/php/xdebug.ini:/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
+      - ./docker/local/php/error_reporting.ini:/usr/local/etc/php/conf.d/error_reporting.ini
     deploy:
       replicas: 1
       placement:
@@ -62,6 +63,3 @@ secrets:
   wpt_locations_ini:
     file: ./docker/local/configs/locations.ini
 
-volumes:
-  upgrade-results:
-  upgrade-work:
